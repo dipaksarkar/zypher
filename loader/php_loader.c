@@ -179,23 +179,60 @@ PHP_MINFO_FUNCTION(zypher)
     DISPLAY_INI_ENTRIES();
 }
 
-/* Check if file has .penc extension */
+/* Remove the extension check and instead scan the file contents for our signature */
 static int is_encoded_file(const char *filename)
 {
     size_t len;
+    php_stream *stream;
+    char buf[10] = {0}; /* Enough to read signature plus a couple extra bytes */
+    int read_bytes;
+    int result = 0;
 
     if (!filename)
     {
         return 0;
     }
 
+    /* Skip non-PHP files based on extension */
     len = strlen(filename);
-    if (len <= 5)
+    if (len <= 4 || strcasecmp(filename + len - 4, ".php") != 0)
     {
         return 0;
     }
 
-    return strcmp(filename + len - 5, ".penc") == 0;
+    /* Open the file and read the first few bytes to check for our signature */
+    stream = php_stream_open_wrapper((char *)filename, "rb", IGNORE_PATH | REPORT_ERRORS, NULL);
+    if (!stream)
+    {
+        return 0;
+    }
+
+    /* Read signature size + a few more bytes */
+    read_bytes = php_stream_read(stream, buf, sizeof(buf) - 1);
+    php_stream_close(stream);
+
+    if (read_bytes < SIGNATURE_LENGTH)
+    {
+        return 0;
+    }
+
+    /* We need to check if the file contains our signature after the PHP opening tag */
+    /* The file may start with <?php and have some code before our ZYPH marker */
+
+    /* Since our encoder adds the signature after the stub, we look for our signature
+       anywhere in the first few bytes, not just at the beginning */
+    if (read_bytes >= SIGNATURE_LENGTH)
+    {
+        /* Look for our signature in the beginning of the file */
+        buf[read_bytes] = '\0';
+        /* Search for signature in the buffer */
+        if (strstr(buf, "ZYPH00") != NULL || strstr(buf, "ZYPH01") != NULL)
+        {
+            result = 1;
+        }
+    }
+
+    return result;
 }
 
 /* Read file contents using php_stream */
@@ -300,16 +337,21 @@ static char *decode_file(const char *encoded_content, size_t encoded_size, size_
     unsigned char *decrypted_content;
     char *result;
     int decrypted_size;
+    const char *signature_pos;
 
-    /* Check for debug signature */
-    if (encoded_size > 6 && strncmp(encoded_content, "ZYPH00", 6) == 0)
+    /* Look for debug signature anywhere in the content */
+    signature_pos = strstr(encoded_content, "ZYPH00");
+    if (signature_pos)
     {
         /* Debug mode - simple base64 */
         php_error_docref(NULL, E_NOTICE, "Debug mode detected - using simple base64 decoding");
 
+        /* Calculate remaining size after the signature */
+        size_t remaining_size = encoded_size - (signature_pos - encoded_content) - 6;
+
         base64_decoded = php_base64_decode(
-            (unsigned char *)(encoded_content + 6),
-            encoded_size - 6);
+            (unsigned char *)(signature_pos + 6),
+            remaining_size);
 
         if (!base64_decoded)
         {
@@ -327,13 +369,17 @@ static char *decode_file(const char *encoded_content, size_t encoded_size, size_
         return result;
     }
 
-    /* Check for AES signature */
-    if (encoded_size > 6 && strncmp(encoded_content, "ZYPH01", 6) == 0)
+    /* Look for AES signature anywhere in the content */
+    signature_pos = strstr(encoded_content, "ZYPH01");
+    if (signature_pos)
     {
+        /* Calculate remaining size after the signature */
+        size_t remaining_size = encoded_size - (signature_pos - encoded_content) - 6;
+
         /* Decode base64 (skip the signature) */
         base64_decoded = php_base64_decode(
-            (unsigned char *)(encoded_content + 6),
-            encoded_size - 6);
+            (unsigned char *)(signature_pos + 6),
+            remaining_size);
 
         if (!base64_decoded)
         {
@@ -398,22 +444,9 @@ static char *decode_file(const char *encoded_content, size_t encoded_size, size_
         return result;
     }
 
-    /* No recognized signature, try legacy base64 decoding */
-    base64_decoded = php_base64_decode((unsigned char *)encoded_content, encoded_size);
-    if (!base64_decoded)
-    {
-        php_error_docref(NULL, E_WARNING, "Invalid encoded file format");
-        return NULL;
-    }
-
-    /* Allocate memory for decoded content */
-    result = estrndup(ZSTR_VAL(base64_decoded), ZSTR_LEN(base64_decoded));
-    *decoded_size = ZSTR_LEN(base64_decoded);
-
-    /* Free decoded string */
-    zend_string_release(base64_decoded);
-
-    return result;
+    /* No recognized signature found */
+    php_error_docref(NULL, E_WARNING, "No Zypher signature found in file");
+    return NULL;
 }
 
 /* Custom file compilation handler */

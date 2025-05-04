@@ -4,7 +4,7 @@
 extern zend_module_entry zypher_module_entry;
 #define phpext_zypher_ptr &zypher_module_entry
 
-#define PHP_ZYPHER_VERSION "1.2.0"
+#define PHP_ZYPHER_VERSION "1.3.0"
 
 /* For compatibility with PHP thread safety */
 #ifdef ZTS

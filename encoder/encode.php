@@ -3,16 +3,22 @@
 /**
  * Zypher PHP File Encoder
  * 
- * This tool encodes PHP files into a custom format (.penc) that can only be 
+ * This tool encodes PHP files into a custom format (.php) that can only be 
  * executed with the Zypher PHP extension installed.
  * 
  * Usage: php encode.php <source_file> [output_file] [--key=your_encryption_key]
- * If output_file is not specified, it will use source_file with .penc extension
+ * If output_file is not specified, it will use source_file with _encoded.php extension
  */
 
 // Default encryption key - THIS SHOULD BE CHANGED IN PRODUCTION
 define('DEFAULT_KEY', 'TestKey123');
 define('DEBUG', false); // Set to false for AES encryption
+
+// The stub that will be prepended to the encoded file
+define('ZYPHER_STUB', '<?php 
+if(extension_loaded(\'Zypher Loader\')){die(\'The file \'.__FILE__." is corrupted.\\n");}echo("\\nScript error: the ".((php_sapi_name()==\'cli\') ?\'Zypher\':\'<a href="https://www.zypher.com">Zypher</a>\')." Loader for PHP needs to be installed.\\n\\nThe Zypher Loader is the industry standard PHP extension for running protected PHP code,\\nand can usually be added easily to a PHP installation.\\n\\nFor Loaders please visit".(php_sapi_name()==\'cli\'?":\\n\\nhttps://get-loader.zypher.com\\n\\nFor":\' <a href="https://get-loader.zypher.com">get-loader.zypher.com</a> and for\')." an instructional video please see".(php_sapi_name()==\'cli\'?":\\n\\nhttp://zypher.be/LV\\n\\n":\' <a href="http://zypher.be/LV">http://zypher.be/LV</a> \')."\n\n");exit(199);
+?>
+');
 
 // Check if source file is provided
 if ($argc < 2) {
@@ -53,18 +59,9 @@ if (!is_readable($source_file)) {
 
 // Determine output file path
 if (!$output_file) {
-    // If source file already has .penc extension, append another one
-    if (substr($source_file, -5) === '.penc') {
-        $output_file = $source_file . '.penc';
-    } else {
-        // Replace .php extension with .penc or append .penc
-        $path_parts = pathinfo($source_file);
-        if (isset($path_parts['extension']) && $path_parts['extension'] === 'php') {
-            $output_file = $path_parts['dirname'] . '/' . $path_parts['filename'] . '.penc';
-        } else {
-            $output_file = $source_file . '.penc';
-        }
-    }
+    // Get filename without extension
+    $path_parts = pathinfo($source_file);
+    $output_file = $path_parts['dirname'] . '/' . $path_parts['filename'] . '_encoded.php';
 }
 
 // Read the source file
@@ -120,8 +117,11 @@ if (DEBUG) {
     $encoded_content = "ZYPH01" . $encoded_content;
 }
 
+// Prepend the stub to the encoded content
+$complete_content = ZYPHER_STUB . $encoded_content;
+
 // Save the encoded content
-if (file_put_contents($output_file, $encoded_content) === false) {
+if (file_put_contents($output_file, $complete_content) === false) {
     echo "Error: Could not write to output file '$output_file'\n";
     exit(1);
 }

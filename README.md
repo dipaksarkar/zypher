@@ -11,6 +11,7 @@ Zypher is a PHP source code encryption system that protects your PHP code with A
 - **License Management**: Control access based on expiration dates and features
 - **Simple Implementation**: Easy to use and integrate with existing PHP projects
 - **Customizable**: Configure encryption keys and licensing parameters
+- **Standard PHP Extension**: Encoded files maintain the standard `.php` extension
 
 ## Requirements
 
@@ -47,20 +48,29 @@ zypher.license_check_enabled=1
 
 ```bash
 cd /path/to/zypher
-php encoder/encode.php your_script.php [output_file.penc] [--key=YourSecretKey]
+php encoder/encode.php your_script.php [output_file.php] [--key=YourSecretKey]
 ```
 
-If you don't specify an output file, the encoder will use the input filename with `.penc` extension.
+If you don't specify an output file, the encoder will use the input filename with `_encoded.php` extension.
 
 ### Running encoded files
 
 Simply run the encoded file with PHP as you would any PHP script:
 
 ```bash
-php your_script.penc
+php your_script_encoded.php
 ```
 
-### License File Format
+If the Zypher extension is not installed, users will see an error message prompting them to install it.
+
+## How It Works
+
+Encoded files are standard PHP files with a special structure:
+1. They begin with a PHP stub that displays an error message for users without the Zypher extension
+2. The actual encoded content follows the stub, marked with a signature
+3. When executed on a system with Zypher installed, the content is automatically decoded and executed
+
+## License File Format
 
 Create a license file with the following format:
 

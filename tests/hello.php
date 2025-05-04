@@ -1,14 +1,16 @@
 <?php
 
 /**
- * Sample PHP file for testing the Zypher encoder/loader system
+ * A simple test file to demonstrate Zypher encoding
  */
 
+// Simple function to test encoding
 function sayHello($name)
 {
-    return "Hello, $name! This is a test of the Zypher encoder/loader system.";
+    echo "Hello, $name!\n";
 }
 
-echo sayHello("Developer") . PHP_EOL;
-echo "Current PHP Version: " . PHP_VERSION . PHP_EOL;
-echo "Current time: " . date('Y-m-d H:i:s') . PHP_EOL;
+// Output a message
+echo "This is a test file that will be encoded with Zypher.\n";
+sayHello("World");
+echo "Current time: " . date('Y-m-d H:i:s') . "\n";

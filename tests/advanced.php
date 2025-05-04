@@ -1,51 +1,58 @@
 <?php
+
 /**
- * Advanced test file for Zypher encoder/loader
- * This tests more complex PHP functionality
+ * Advanced test file for Zypher encoding
+ * 
+ * This file tests more complex PHP features to ensure they're properly
+ * encoded and decoded by the Zypher loader.
  */
 
-class ZypherTest {
+namespace ZypherTest;
+
+class TestClass
+{
     private $name;
-    private $encryptionType;
-    
-    public function __construct(string $name, string $encryptionType = 'AES-256-CBC') {
+    private $value;
+
+    public function __construct(string $name, $value = null)
+    {
         $this->name = $name;
-        $this->encryptionType = $encryptionType;
+        $this->value = $value;
     }
-    
-    public function getName(): string {
+
+    public function getName(): string
+    {
         return $this->name;
     }
-    
-    public function getEncryptionDetails(): array {
-        return [
-            'name' => $this->name,
-            'encryption' => $this->encryptionType,
-            'strength' => '256-bit',
-            'php_version' => PHP_VERSION,
-            'time' => date('Y-m-d H:i:s')
-        ];
+
+    public function getValue()
+    {
+        return $this->value;
     }
-    
-    public function printDetails(): void {
-        $details = $this->getEncryptionDetails();
-        echo "=== Zypher Test Details ===\n";
-        foreach ($details as $key => $value) {
-            echo "$key: $value\n";
-        }
-        echo "=========================\n";
+
+    public function sayHello(): void
+    {
+        echo "Hello from {$this->name}!\n";
     }
 }
 
-// Create an instance and display details
-$test = new ZypherTest('Enhanced Zypher System');
-$test->printDetails();
+// Create a test instance
+$test = new TestClass("Zypher Test", 42);
+$test->sayHello();
+echo "Value: " . $test->getValue() . "\n";
 
-// Test some PHP 8.3+ features
-$numbers = [1, 2, 3, 4, 5];
-$doubled = array_map(fn($n) => $n * 2, $numbers);
-echo "Doubled numbers: " . implode(', ', $doubled) . "\n";
+// Test some PHP 7+ features
+$arrowFunction = fn($x) => $x * 2;
+echo "Arrow function result: " . $arrowFunction(21) . "\n";
 
-// Demonstrate that this file was loaded through the Zypher system
-echo "This PHP file was successfully loaded and executed through the Zypher encoder/loader system.\n";
-echo "Current execution time: " . microtime(true) . "\n";
+// Test array handling
+$array = [
+    'name' => $test->getName(),
+    'value' => $test->getValue(),
+    'calculated' => $arrowFunction($test->getValue())
+];
+
+echo "JSON output: " . json_encode($array, JSON_PRETTY_PRINT) . "\n";
+
+// Output successful test completion
+echo "Advanced test completed successfully!\n";
