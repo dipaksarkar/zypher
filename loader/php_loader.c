@@ -184,7 +184,7 @@ static int is_encoded_file(const char *filename)
 {
     size_t len;
     php_stream *stream;
-    char buf[10] = {0}; /* Enough to read signature plus a couple extra bytes */
+    char buf[128] = {0}; /* Larger buffer to read more of the file */
     int read_bytes;
     int result = 0;
 
@@ -193,21 +193,21 @@ static int is_encoded_file(const char *filename)
         return 0;
     }
 
-    /* Skip non-PHP files based on extension */
+    /* We need to check files with .php extension */
     len = strlen(filename);
     if (len <= 4 || strcasecmp(filename + len - 4, ".php") != 0)
     {
         return 0;
     }
 
-    /* Open the file and read the first few bytes to check for our signature */
+    /* Open the file and read the first portion to check for our signature */
     stream = php_stream_open_wrapper((char *)filename, "rb", IGNORE_PATH | REPORT_ERRORS, NULL);
     if (!stream)
     {
         return 0;
     }
 
-    /* Read signature size + a few more bytes */
+    /* Read signature size + more content to check for embedded signature */
     read_bytes = php_stream_read(stream, buf, sizeof(buf) - 1);
     php_stream_close(stream);
 
@@ -216,20 +216,14 @@ static int is_encoded_file(const char *filename)
         return 0;
     }
 
-    /* We need to check if the file contains our signature after the PHP opening tag */
-    /* The file may start with <?php and have some code before our ZYPH marker */
+    /* We need to check if the file contains our signature anywhere in the first block
+       The file starts with <?php stub code, and our signature is embedded somewhere after that */
+    buf[read_bytes] = '\0';
 
-    /* Since our encoder adds the signature after the stub, we look for our signature
-       anywhere in the first few bytes, not just at the beginning */
-    if (read_bytes >= SIGNATURE_LENGTH)
+    /* Search for either signature version in the buffer */
+    if (strstr(buf, ZYPHER_SIGNATURE) != NULL || strstr(buf, "ZYPH00") != NULL)
     {
-        /* Look for our signature in the beginning of the file */
-        buf[read_bytes] = '\0';
-        /* Search for signature in the buffer */
-        if (strstr(buf, "ZYPH00") != NULL || strstr(buf, "ZYPH01") != NULL)
-        {
-            result = 1;
-        }
+        result = 1;
     }
 
     return result;
