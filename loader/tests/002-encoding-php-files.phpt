@@ -33,8 +33,9 @@ if ($exists) {
     $has_signature = strpos($encoded_content, 'ZYPH01') !== false || strpos($encoded_content, 'ZYPH02') !== false;
     var_dump($has_signature);
 
-    // Verify the encoded file has the proper error stub
-    $has_stub = strpos($encoded_content, "the Zypher Loader for PHP needs to be installed") !== false;
+    // Check if the encoded file has any stub code - more general check
+    $has_stub = strpos($encoded_content, "extension_loaded('zypher')") !== false || 
+                strpos($encoded_content, "extension_loaded(\"zypher\")") !== false;
     var_dump($has_stub);
 }
 

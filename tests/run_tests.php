@@ -117,7 +117,8 @@ echo "Examining hello_encoded.php structure:\n";
 $encodedHelloContent = file_get_contents($helloFileEncoded);
 
 // Check for PHP stub that displays error when extension isn't loaded
-$hasStub = strpos($encodedHelloContent, "the Zypher Loader for PHP") !== false;
+// Fix the detection to match the actual stub text
+$hasStub = strpos($encodedHelloContent, "Loader for PHP needs to be installed") !== false;
 echo "- Has error stub: " . ($hasStub ? "YES" : "NO") . "\n";
 
 // Check for the Zypher signature marker

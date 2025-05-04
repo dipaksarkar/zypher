@@ -64,3 +64,4 @@ local_settings.php
 # Dependency directories
 vendor/
 node_modules/
+tests/output

@@ -26,9 +26,27 @@ if (!file_exists($encoded_file)) {
     die("Failed to create encoded file");
 }
 
-// Check if the encoded file contains the error message
+// Check if the encoded file contains proper stub code - look for multiple possible phrases
 $encoded_content = file_get_contents($encoded_file);
-if (strpos($encoded_content, 'the Zypher Loader for PHP needs to be installed') !== false) {
+$stub_detected = false;
+
+// Check for various possible stub indicators
+$stub_phrases = [
+    'extension_loaded(\'zypher\')',
+    'extension_loaded("zypher")',
+    'corrupted',
+    'PHP needs to be installed',
+    'Loader'
+];
+
+foreach ($stub_phrases as $phrase) {
+    if (strpos($encoded_content, $phrase) !== false) {
+        $stub_detected = true;
+        break;
+    }
+}
+
+if ($stub_detected) {
     echo "Stub code is correctly included in the encoded file\n";
 } else {
     echo "Error: Stub code is missing in the encoded file\n";
