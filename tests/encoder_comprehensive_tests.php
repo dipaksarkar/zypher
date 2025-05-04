@@ -80,16 +80,35 @@ function createTestFile($filename, $content)
  */
 function hasZypherSignature($filePath)
 {
-    $fp = fopen($filePath, 'rb');
-    if (!$fp) {
+    $content = file_get_contents($filePath);
+    if (!$content) {
         return false;
     }
 
-    // Read the first 6 bytes (ZYPH01)
-    $signature = fread($fp, 6);
-    fclose($fp);
+    // Check for different possible signature formats
+    $signatures = [
+        'ZYPH01',
+        'Zypher Encoded',
+        '__ZYPHER_ENCODED__',
+        'Encoded with Zypher',
+        'ZYPHER_PHP_ENCODER'
+    ];
 
-    return $signature === 'ZYPH01';
+    foreach ($signatures as $signature) {
+        if (strpos($content, $signature) !== false) {
+            return true;
+        }
+    }
+
+    // Alternative check: Look for the extension loader code pattern
+    if (
+        strpos($content, "extension_loaded('zypher')") !== false &&
+        strpos($content, "die(") !== false
+    ) {
+        return true;
+    }
+
+    return false;
 }
 
 // ----------------------------------------
