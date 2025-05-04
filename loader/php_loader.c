@@ -45,9 +45,15 @@ PHP_MINIT_FUNCTION(zypher);
 PHP_MSHUTDOWN_FUNCTION(zypher);
 PHP_MINFO_FUNCTION(zypher);
 
-/* Add the function entry for our string decoder */
+/* Add proper arginfo for zypher_decode_string function */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_zypher_decode_string, 0, 0, 2)
+ZEND_ARG_INFO(0, hex_string)
+ZEND_ARG_INFO(0, key)
+ZEND_END_ARG_INFO()
+
+/* Add the function entry for our string decoder with proper arginfo */
 static const zend_function_entry zypher_functions[] = {
-    PHP_FE(zypher_decode_string, NULL)
+    PHP_FE(zypher_decode_string, arginfo_zypher_decode_string)
         PHP_FE_END};
 
 /* Module configuration entries */
@@ -1037,28 +1043,33 @@ PHP_FUNCTION(zypher_decode_string)
 
     // Binary size is half of hex size (2 hex chars = 1 byte)
     size_t bin_len = hex_len / 2;
-    char *bin = (char *)emalloc(bin_len + 1);
+    unsigned char *bin = (unsigned char *)emalloc(bin_len + 1);
 
     // Convert hex to binary
-    int i, j;
+    size_t i, j;
     for (i = 0, j = 0; i < hex_len; i += 2, j++)
     {
         char hex_byte[3] = {hex_str[i], hex_str[i + 1], 0};
-        bin[j] = (char)strtol(hex_byte, NULL, 16);
+        bin[j] = (unsigned char)strtol(hex_byte, NULL, 16);
     }
 
     // XOR decode the binary data with the key
-    char *result = (char *)emalloc(bin_len + 1);
+    unsigned char *result = (unsigned char *)emalloc(bin_len + 1);
     for (i = 0; i < bin_len; i++)
     {
         result[i] = bin[i] ^ key[i % key_len];
     }
     result[bin_len] = '\0';
 
+    if (DEBUG)
+    {
+        php_printf("DEBUG: Decoded string of length %zu\n", bin_len);
+    }
+
     // Free temporary binary buffer
     efree(bin);
 
     // Return the decoded string
-    RETVAL_STRINGL(result, bin_len);
+    RETVAL_STRINGL((char *)result, bin_len);
     efree(result);
 }
