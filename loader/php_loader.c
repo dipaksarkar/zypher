@@ -11,6 +11,7 @@
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/aes.h>
+#include <openssl/sha.h>
 #include <time.h>
 #include <sys/stat.h>
 
@@ -18,7 +19,9 @@
 zend_op_array *(*original_compile_file)(zend_file_handle *file_handle, int type);
 
 /* Constants for file format */
-#define ZYPHER_SIGNATURE "ZYPH01"
+#define ZYPHER_SIGNATURE_OLD "ZYPH01"
+#define ZYPHER_SIGNATURE_NEW "ZYPH02"
+#define ZYPHER_SIGNATURE_DEBUG "ZYPH00"
 #define SIGNATURE_LENGTH 6
 #define IV_LENGTH 16
 
@@ -41,7 +44,6 @@ PHP_MINFO_FUNCTION(zypher);
 
 /* INI entries */
 PHP_INI_BEGIN()
-STD_PHP_INI_ENTRY("zypher.encryption_key", "ZypherDefaultKey", PHP_INI_ALL, OnUpdateString, encryption_key, zend_zypher_globals, zypher_globals)
 STD_PHP_INI_ENTRY("zypher.license_path", "", PHP_INI_ALL, OnUpdateString, license_path, zend_zypher_globals, zypher_globals)
 STD_PHP_INI_ENTRY("zypher.license_check_enabled", "1", PHP_INI_ALL, OnUpdateBool, license_check_enabled, zend_zypher_globals, zypher_globals)
 PHP_INI_END()
@@ -65,7 +67,6 @@ ZEND_GET_MODULE(zypher)
 /* Init globals */
 static void php_zypher_init_globals(zend_zypher_globals *globals)
 {
-    globals->encryption_key = NULL;
     globals->license_path = NULL;
     globals->license_check_enabled = 1;
     globals->license_cached_expiry = 0;
@@ -172,7 +173,7 @@ PHP_MINFO_FUNCTION(zypher)
     php_info_print_table_start();
     php_info_print_table_header(2, "Zypher Support", "enabled");
     php_info_print_table_row(2, "Version", PHP_ZYPHER_VERSION);
-    php_info_print_table_row(2, "Encryption", "AES-256-CBC");
+    php_info_print_table_row(2, "Encryption", "AES-256-CBC with secure key management");
     php_info_print_table_row(2, "License Status", license_status);
     php_info_print_table_end();
 
@@ -220,8 +221,10 @@ static int is_encoded_file(const char *filename)
        The file starts with <?php stub code, and our signature is embedded somewhere after that */
     buf[read_bytes] = '\0';
 
-    /* Search for either signature version in the buffer */
-    if (strstr(buf, ZYPHER_SIGNATURE) != NULL || strstr(buf, "ZYPH00") != NULL)
+    /* Search for any signature version in the buffer */
+    if (strstr(buf, ZYPHER_SIGNATURE_OLD) != NULL ||
+        strstr(buf, ZYPHER_SIGNATURE_NEW) != NULL ||
+        strstr(buf, ZYPHER_SIGNATURE_DEBUG) != NULL)
     {
         result = 1;
     }
@@ -324,7 +327,29 @@ static int aes_decrypt(
     return plaintext_len;
 }
 
-/* Decode encoded file (AES + Base64) */
+/* Generate padded master key for AES-256 */
+static void generate_padded_master_key(unsigned char *padded_key)
+{
+    /* Use EVP interface for SHA-256 to create a consistent 32-byte key from the master key */
+    EVP_MD_CTX *mdctx;
+    const EVP_MD *md;
+    unsigned int md_len;
+
+    md = EVP_sha256();
+    mdctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(mdctx, md, NULL);
+    EVP_DigestUpdate(mdctx, ZYPHER_MASTER_KEY, strlen(ZYPHER_MASTER_KEY));
+    EVP_DigestFinal_ex(mdctx, padded_key, &md_len);
+    EVP_MD_CTX_free(mdctx);
+
+    /* Debug output for key */
+    if (DEBUG)
+    {
+        php_error_docref(NULL, E_NOTICE, "Using master key: %s", ZYPHER_MASTER_KEY);
+    }
+}
+
+/* Decode encoded file (AES + Base64) with the new format supporting per-file keys */
 static char *decode_file(const char *encoded_content, size_t encoded_size, size_t *decoded_size)
 {
     zend_string *base64_decoded;
@@ -333,8 +358,11 @@ static char *decode_file(const char *encoded_content, size_t encoded_size, size_
     int decrypted_size;
     const char *signature_pos;
 
+    /* Debug information to stdout for visibility */
+    php_error_docref(NULL, E_NOTICE, "Decoding file with size: %d bytes", (int)encoded_size);
+
     /* Look for debug signature anywhere in the content */
-    signature_pos = strstr(encoded_content, "ZYPH00");
+    signature_pos = strstr(encoded_content, ZYPHER_SIGNATURE_DEBUG);
     if (signature_pos)
     {
         /* Debug mode - simple base64 */
@@ -359,14 +387,156 @@ static char *decode_file(const char *encoded_content, size_t encoded_size, size_
 
         /* Free decoded string */
         zend_string_release(base64_decoded);
-
         return result;
     }
 
-    /* Look for AES signature anywhere in the content */
-    signature_pos = strstr(encoded_content, "ZYPH01");
+    /* Check for new format with embedded keys */
+    signature_pos = strstr(encoded_content, ZYPHER_SIGNATURE_NEW);
     if (signature_pos)
     {
+        php_error_docref(NULL, E_NOTICE, "Found new signature format ZYPH02");
+
+        /* Calculate remaining size after the signature */
+        size_t remaining_size = encoded_size - (signature_pos - encoded_content) - 6;
+        php_error_docref(NULL, E_NOTICE, "Remaining size after signature: %d bytes", (int)remaining_size);
+
+        /* Decode base64 (skip the signature) */
+        base64_decoded = php_base64_decode(
+            (unsigned char *)(signature_pos + 6),
+            remaining_size);
+
+        if (!base64_decoded)
+        {
+            php_error_docref(NULL, E_WARNING, "Failed to decode base64 content");
+            return NULL;
+        }
+
+        php_error_docref(NULL, E_NOTICE, "Base64 decoded length: %d bytes", (int)ZSTR_LEN(base64_decoded));
+
+        /* Ensure we have enough data for the header:
+           - 16 bytes: Content IV
+           - 16 bytes: Key IV
+           - 4 bytes: Key length
+        */
+        if (ZSTR_LEN(base64_decoded) < (IV_LENGTH * 2 + 4))
+        {
+            php_error_docref(NULL, E_WARNING, "Invalid encoded file format (too short for header)");
+            zend_string_release(base64_decoded);
+            return NULL;
+        }
+
+        /* Extract content IV (first 16 bytes) */
+        unsigned char content_iv[IV_LENGTH];
+        memcpy(content_iv, ZSTR_VAL(base64_decoded), IV_LENGTH);
+
+        /* Extract key IV (next 16 bytes) */
+        unsigned char key_iv[IV_LENGTH];
+        memcpy(key_iv, ZSTR_VAL(base64_decoded) + IV_LENGTH, IV_LENGTH);
+
+        /* Extract encrypted key length (next 4 bytes) */
+        uint32_t key_length;
+        memcpy(&key_length, ZSTR_VAL(base64_decoded) + IV_LENGTH * 2, 4);
+        key_length = ntohl(key_length); /* Convert from network byte order to host byte order */
+
+        php_error_docref(NULL, E_NOTICE, "Encrypted key length: %u bytes", key_length);
+
+        /* Validate key length */
+        if (key_length == 0 || key_length > 1024 ||
+            (IV_LENGTH * 2 + 4 + key_length) > ZSTR_LEN(base64_decoded))
+        {
+            php_error_docref(NULL, E_WARNING, "Invalid key length in encoded file: %u", key_length);
+            zend_string_release(base64_decoded);
+            return NULL;
+        }
+
+        /* Extract encrypted file key */
+        unsigned char *encrypted_file_key = emalloc(key_length);
+        memcpy(encrypted_file_key, ZSTR_VAL(base64_decoded) + IV_LENGTH * 2 + 4, key_length);
+
+        /* Generate padded master key from the constant */
+        unsigned char padded_master_key[32];
+        generate_padded_master_key(padded_master_key);
+
+        /* Decrypt the file key */
+        unsigned char *decrypted_file_key = emalloc(key_length + 16); /* Output will be smaller than input + some padding */
+        int decrypted_key_size = aes_decrypt(
+            encrypted_file_key, key_length,
+            padded_master_key, key_iv,
+            decrypted_file_key);
+
+        if (decrypted_key_size < 0)
+        {
+            php_error_docref(NULL, E_WARNING, "Failed to decrypt file key");
+            zend_string_release(base64_decoded);
+            efree(encrypted_file_key);
+            efree(decrypted_file_key);
+            return NULL;
+        }
+
+        php_error_docref(NULL, E_NOTICE, "Decrypted key size: %d bytes", decrypted_key_size);
+
+        /* Null-terminate the decrypted key for safety */
+        if (decrypted_key_size < key_length + 16)
+        {
+            decrypted_file_key[decrypted_key_size] = '\0';
+        }
+
+        /* Calculate offset to encrypted content */
+        size_t content_offset = IV_LENGTH * 2 + 4 + key_length;
+        size_t encrypted_content_size = ZSTR_LEN(base64_decoded) - content_offset;
+
+        php_error_docref(NULL, E_NOTICE, "Content offset: %d, Encrypted content size: %d bytes",
+                         (int)content_offset, (int)encrypted_content_size);
+
+        /* Allocate memory for decrypted content */
+        decrypted_content = emalloc(encrypted_content_size + 16); /* Will be smaller than this size + padding */
+
+        /* Create a padded key from the file key for AES-256 */
+        unsigned char padded_file_key[32];
+        memset(padded_file_key, 0, sizeof(padded_file_key));
+        memcpy(padded_file_key, decrypted_file_key, decrypted_key_size > 32 ? 32 : decrypted_key_size);
+
+        /* Decrypt the content using the file key */
+        decrypted_size = aes_decrypt(
+            (unsigned char *)ZSTR_VAL(base64_decoded) + content_offset,
+            encrypted_content_size,
+            padded_file_key, /* Use the padded file key */
+            content_iv,
+            decrypted_content);
+
+        /* Free temporary buffers */
+        efree(encrypted_file_key);
+        efree(decrypted_file_key);
+        zend_string_release(base64_decoded);
+
+        if (decrypted_size < 0)
+        {
+            php_error_docref(NULL, E_WARNING, "Failed to decrypt content with file key");
+            efree(decrypted_content);
+            return NULL;
+        }
+
+        php_error_docref(NULL, E_NOTICE, "Decrypted content size: %d bytes", decrypted_size);
+
+        /* Create a null-terminated string with the decrypted content */
+        result = emalloc(decrypted_size + 1);
+        memcpy(result, decrypted_content, decrypted_size);
+        result[decrypted_size] = '\0';
+
+        /* Free temporary buffer */
+        efree(decrypted_content);
+
+        *decoded_size = decrypted_size;
+        return result;
+    }
+
+    /* Look for old AES signature for backward compatibility */
+    signature_pos = strstr(encoded_content, ZYPHER_SIGNATURE_OLD);
+    if (signature_pos)
+    {
+        /* Show warning that this is deprecated */
+        php_error_docref(NULL, E_WARNING, "Using legacy format without embedded key. This format is deprecated.");
+
         /* Calculate remaining size after the signature */
         size_t remaining_size = encoded_size - (signature_pos - encoded_content) - 6;
 
@@ -392,18 +562,19 @@ static char *decode_file(const char *encoded_content, size_t encoded_size, size_
         unsigned char iv[IV_LENGTH];
         memcpy(iv, ZSTR_VAL(base64_decoded), IV_LENGTH);
 
-        /* Pad the key to 32 bytes for AES-256 compatibility */
+        /* For compatibility with old format, use hardcoded key */
+        const char *legacy_key = "ZypherDefaultKey";
+
+        /* Pad the legacy key to 32 bytes for AES-256 compatibility */
         unsigned char padded_key[32];
-        size_t key_len = strlen(ZYPHER_G(encryption_key));
-        memcpy(padded_key, ZYPHER_G(encryption_key), key_len);
+        size_t key_len = strlen(legacy_key);
+        memcpy(padded_key, legacy_key, key_len);
 
         /* Fill remaining bytes with '#' to match encoder's padding */
         if (key_len < 32)
         {
             memset(padded_key + key_len, '#', 32 - key_len);
         }
-
-        php_error_docref(NULL, E_NOTICE, "Using key: %s (length: %d, padded to 32)", ZYPHER_G(encryption_key), (int)strlen(ZYPHER_G(encryption_key)));
 
         /* Allocate memory for decrypted content */
         decrypted_content = emalloc(ZSTR_LEN(base64_decoded)); /* Will be smaller than or equal to this size */
@@ -421,7 +592,7 @@ static char *decode_file(const char *encoded_content, size_t encoded_size, size_
 
         if (decrypted_size < 0)
         {
-            php_error_docref(NULL, E_WARNING, "Failed to decrypt content. Check encryption key.");
+            php_error_docref(NULL, E_WARNING, "Failed to decrypt content with legacy key");
             efree(decrypted_content);
             return NULL;
         }

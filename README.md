@@ -37,7 +37,6 @@ Add the following to your php.ini file:
 
 ```ini
 extension=zypher.so
-zypher.encryption_key=YourSecretKey
 zypher.license_path=/path/to/license.key
 zypher.license_check_enabled=1
 ```

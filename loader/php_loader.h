@@ -6,6 +6,11 @@ extern zend_module_entry zypher_module_entry;
 
 #define PHP_ZYPHER_VERSION "1.3.0"
 
+/* Define debug mode */
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+
 /* For compatibility with PHP thread safety */
 #ifdef ZTS
 #include "TSRM.h"
@@ -13,7 +18,6 @@ extern zend_module_entry zypher_module_entry;
 
 /* Define the extension globals */
 ZEND_BEGIN_MODULE_GLOBALS(zypher)
-char *encryption_key;
 char *license_path;
 zend_bool license_check_enabled;
 time_t license_cached_expiry;
@@ -24,6 +28,9 @@ ZEND_END_MODULE_GLOBALS(zypher)
 #define LICENSE_FEATURE_AES256 (1 << 0)
 #define LICENSE_FEATURE_DEBUG (1 << 1)
 #define LICENSE_FEATURE_LOGGING (1 << 2)
+
+/* Define a master key constant (used to decrypt per-file keys) */
+#define ZYPHER_MASTER_KEY "Zypher-Master-Key-X7pQ9r2s"
 
 /* Access extension globals */
 #ifdef ZTS

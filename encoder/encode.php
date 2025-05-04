@@ -6,12 +6,12 @@
  * This tool encodes PHP files into a custom format (.php) that can only be 
  * executed with the Zypher PHP extension installed.
  * 
- * Usage: php encode.php <source_file> [output_file] [--key=your_encryption_key]
+ * Usage: php encode.php <source_file> [output_file] [--master-key=your_master_key] [--quiet]
  * If output_file is not specified, it will use source_file with _encoded.php extension
  */
 
-// Default encryption key - THIS SHOULD BE CHANGED IN PRODUCTION
-define('DEFAULT_KEY', 'TestKey123');
+// Default master key - Used to encrypt the per-file random key
+define('MASTER_KEY', 'Zypher-Master-Key-X7pQ9r2s');
 define('DEBUG', false); // Set to false for AES encryption
 
 // The stub that will be prepended to the encoded file - make sure it contains exactly "the Zypher Loader for PHP" for tests
@@ -23,27 +23,33 @@ if(!extension_loaded(\'zypher\')){echo("\nScript error: the Zypher Loader for PH
 // Check if source file is provided
 if ($argc < 2) {
     echo "Error: No source file provided\n";
-    echo "Usage: php encode.php <source_file> [output_file] [--key=your_encryption_key]\n";
+    echo "Usage: php encode.php <source_file> [output_file] [--master-key=your_master_key] [--quiet]\n";
     exit(1);
 }
 
 // Parse arguments
 $source_file = $argv[1];
 $output_file = null;
-$encryption_key = DEFAULT_KEY;
+$master_key = MASTER_KEY;
+$quiet_mode = false;
 
 for ($i = 2; $i < $argc; $i++) {
-    if (substr($argv[$i], 0, 6) === '--key=') {
-        $encryption_key = substr($argv[$i], 6);
+    if (substr($argv[$i], 0, 12) === '--master-key=') {
+        $master_key = substr($argv[$i], 12);
+    } elseif ($argv[$i] === '--quiet') {
+        $quiet_mode = true;
     } elseif (!$output_file) {
         $output_file = $argv[$i];
     }
 }
 
+// Generate a random encryption key for this file
+$file_key_length = 32; // 256 bits for AES-256
+$random_file_key = bin2hex(openssl_random_pseudo_bytes($file_key_length / 2));
+
 if (DEBUG) {
-    echo "DEBUG: Using encryption key: '$encryption_key'\n";
-    echo "DEBUG: Key length: " . strlen($encryption_key) . " bytes\n";
-    echo "DEBUG: Key binary representation: " . bin2hex($encryption_key) . "\n";
+    echo "DEBUG: Generated file key: '$random_file_key'\n";
+    echo "DEBUG: Master key: '$master_key'\n";
 }
 
 // Validate source file
@@ -75,24 +81,23 @@ if ($source_content === false) {
 if (DEBUG) {
     // For testing, use simple base64 instead of AES to ensure the extension works
     $encoded_content = "ZYPH00" . base64_encode($source_content);
-    echo "DEBUG: Using simple base64 encoding for debugging\n";
+    if (!$quiet_mode) {
+        echo "DEBUG: Using simple base64 encoding for debugging\n";
+    }
 } else {
-    // Use fixed IV for simplicity (in production, should be random and securely stored)
-    $iv = str_repeat('X', 16); // 16 bytes of 'X' for a fixed IV
+    // Use a randomized IV for better security
+    $iv = openssl_random_pseudo_bytes(16);
 
     if (DEBUG) {
         echo "DEBUG: IV (hex): " . bin2hex($iv) . "\n";
         echo "DEBUG: IV length: " . strlen($iv) . " bytes\n";
     }
 
-    // Ensure the key is exactly 32 bytes (256 bits) for AES-256
-    $padded_key = str_pad($encryption_key, 32, '#');
-
-    // Normal AES-256-CBC encryption for production with key/iv info
+    // Encrypt the file content using the random file key
     $encrypted_content = openssl_encrypt(
         $source_content,
         'AES-256-CBC',
-        $padded_key,
+        $random_file_key,
         OPENSSL_RAW_DATA,
         $iv
     );
@@ -102,19 +107,43 @@ if (DEBUG) {
         exit(1);
     }
 
+    // Now encrypt the random file key with the master key
+    $master_iv = substr(md5($master_key, true), 0, 16); // Derive IV from master key
+    $padded_master_key = substr(hash('sha256', $master_key, true), 0, 32);
+    $encrypted_file_key = openssl_encrypt(
+        $random_file_key,
+        'AES-256-CBC',
+        $padded_master_key,
+        OPENSSL_RAW_DATA,
+        $master_iv
+    );
+
+    if ($encrypted_file_key === false) {
+        echo "Error: Key encryption failed: " . openssl_error_string() . "\n";
+        exit(1);
+    }
+
     if (DEBUG) {
-        echo "DEBUG: Padded key (hex): " . bin2hex($padded_key) . " (length: " . strlen($padded_key) . ")\n";
+        echo "DEBUG: Encrypted file key (hex): " . bin2hex($encrypted_file_key) . "\n";
         echo "DEBUG: Encrypted content size: " . strlen($encrypted_content) . " bytes\n";
     }
 
-    // Format: 16 bytes of IV followed by the encrypted content
-    $final_content = $iv . $encrypted_content;
+    // Format: 
+    // - 16 bytes: content IV
+    // - 16 bytes: key IV (master_iv)
+    // - 4 bytes: encrypted file key length
+    // - N bytes: encrypted file key
+    // - Remaining bytes: encrypted content
+    $key_length = strlen($encrypted_file_key);
+    $key_length_bytes = pack("N", $key_length); // 4 bytes unsigned long (big endian)
+
+    $final_content = $iv . $master_iv . $key_length_bytes . $encrypted_file_key . $encrypted_content;
 
     // Base64 encode the entire thing for storage
     $encoded_content = base64_encode($final_content);
 
     // Add a signature to identify this as a Zypher encoded file
-    $encoded_content = "ZYPH01" . $encoded_content;
+    $encoded_content = "ZYPH02" . $encoded_content; // New version with embedded key
 }
 
 // Prepend the stub to the encoded content
@@ -126,13 +155,15 @@ if (file_put_contents($output_file, $complete_content) === false) {
     exit(1);
 }
 
-echo "File encoded successfully!\n";
-echo "Source: $source_file\n";
-echo "Output: $output_file\n";
-if (!DEBUG) {
-    echo "Encryption: AES-256-CBC with fixed IV\n";
-} else {
-    echo "Encryption: Base64 (debug mode)\n";
+if (!$quiet_mode) {
+    echo "File encoded successfully!\n";
+    echo "Source: $source_file\n";
+    echo "Output: $output_file\n";
+    if (!DEBUG) {
+        echo "Encryption: AES-256-CBC with secure random key\n";
+    } else {
+        echo "Encryption: Base64 (debug mode)\n";
+    }
 }
 
 exit(0);
