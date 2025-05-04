@@ -282,7 +282,10 @@ if (!is_readable($source_file)) {
 if (!$output_file) {
     // Get filename without extension
     $path_parts = pathinfo($source_file);
-    $output_file = $path_parts['dirname'] . '/' . $path_parts['filename'] . '_encoded';
+    $output_file = $path_parts['dirname'] . '/' . $path_parts['filename'] . '_encoded.php';
+} elseif (!preg_match('/\.php$/i', $output_file)) {
+    // Ensure PHP extension
+    $output_file .= '.php';
 }
 
 // Read the source file
@@ -438,41 +441,18 @@ if (DEBUG) {
     $encoded_content = ZYPHER_SIGNATURE . $encoded_content;
 }
 
-// Write the encoded content directly to the output file without PHP tags
-// This is crucial for our extension to see the ZYPH01 signature first
-if (file_put_contents($output_file, $encoded_content) === false) {
-    echo "Error: Could not write to output file '$output_file'\n";
-    exit(1);
-}
-
-// Create a PHP wrapper script that includes our encoded file
-$wrapper_path = $output_file . ".php";
-$wrapper_content = <<<EOT
-<?php
-// Zypher encoded file wrapper
-// This wrapper ensures the Zypher extension is loaded before processing the encoded file
-if(!extension_loaded('zypher')){
-    echo "\\nScript error: the Zypher Loader for PHP needs to be installed.\\n";
-    echo "The Zypher Loader is the industry standard PHP extension for running protected PHP code,\\n";
-    echo "and can usually be added easily to a PHP installation.\\n";
-    exit(199);
-}
-
-// Add anti-debugging check
-if (function_exists('xdebug_get_code_coverage') || 
-    extension_loaded('xdebug') ||
-    ini_get('assert.active') == 1) {
-    echo "\\nError: Debugging tools detected.\\n";
-    echo "This protected code cannot run under a debugger.\\n";
-    exit(403);
-}
-
-// The encoded file will be processed by the Zypher extension
-include(__DIR__ . '/' . basename('$output_file'));
+// Create a PHP file with stub and encoded content
+$stub_content = <<<EOT
+<?php 
+if(!extension_loaded('zypher')){die('The file '.__FILE__." is corrupted.\\n");}
+echo("\\nScript error: the ".((php_sapi_name()=='cli') ?'Zypher':'<a href=\"https://www.zypher.com\">Zypher</a>')." Loader for PHP needs to be installed.\\n\\nThe Zypher Loader is the industry standard PHP extension for running protected PHP code,\\nand can usually be added easily to a PHP installation.\\n\\nFor Loaders please visit".((php_sapi_name()=='cli')?":\\n\\nhttps://get-loader.zypher.com\\n\\nFor":' <a href=\"https://get-loader.zypher.com\">get-loader.zypher.com</a> and for')." an instructional video please see".((php_sapi_name()=='cli')?":\\n\\nhttp://zypher.be/LV\\n\\n":' <a href=\"http://zypher.be/LV\">http://zypher.be/LV</a> ')."\n\n");
+exit(199);
+?>
 EOT;
 
-if (file_put_contents($wrapper_path, $wrapper_content) === false) {
-    echo "Error: Could not write to wrapper file '$wrapper_path'\n";
+// Write encoded content directly to file (must begin with signature)
+if (file_put_contents($output_file, $stub_content . $encoded_content) === false) {
+    echo "Error: Could not write to output file '$output_file'\n";
     exit(1);
 }
 
@@ -480,7 +460,6 @@ if (!$quiet_mode) {
     echo "File encoded successfully!\n";
     echo "Source: $source_file\n";
     echo "Encoded file: $output_file\n";
-    echo "Wrapper file: $wrapper_path\n";
     if (!DEBUG) {
         echo "Encryption: AES-256-CBC with secure key derivation and two-layer encryption\n";
         if ($obfuscation_options['enabled']) {
@@ -494,7 +473,7 @@ if (!$quiet_mode) {
     } else {
         echo "Encryption: Base64 (debug mode)\n";
     }
-    echo "To run the encoded file, use: php $wrapper_path\n";
+    echo "To run the encoded file, use: php $output_file\n";
 }
 
 exit(0);

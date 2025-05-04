@@ -23,16 +23,20 @@ time_t license_expiry;              /* License expiration timestamp */
 unsigned char anti_tamper_hash[32]; /* Hash to verify extension integrity */
 int debugger_protection;            /* Enable/disable anti-debugging features */
 int self_healing;                   /* Enable self-healing code */
+int debug_mode;                     /* Enable debug output */
 ZEND_END_MODULE_GLOBALS(zypher)
 
 /* Define a master key constant (used to decrypt per-file keys) */
 #define ZYPHER_MASTER_KEY "Zypher-Master-Key-X7pQ9r2s"
-#define ZYPHER_SIGNATURE "ZYPH01"
+#define ZYPHER_SIGNATURE "<?php /* Zypher Encoded File */ "
+#define SIGNATURE_LENGTH 32
 #define IV_LENGTH 16
+#define KEY_LENGTH 32
 #define MAX_KEY_ITERATIONS 5000
 
 /* File format version */
 #define ZYPHER_FORMAT_VERSION 1
+#define BYTE_ROTATION_OFFSET 7 /* Ensure this matches the encoder's rotation value */
 
 /* Define security flags */
 #define ZYPHER_FLAG_EXPIRE 0x0001      /* Content has expiry date */
@@ -50,6 +54,10 @@ ZEND_END_MODULE_GLOBALS(zypher)
 #define ZYPHER_ERR_TAMPERED 4
 #define ZYPHER_ERR_DEBUG 5
 #define ZYPHER_ERR_UNKNOWN 99
+#define ZYPHER_ERR_INVALID_FILE 1
+#define ZYPHER_ERR_DECRYPT_FAILED 2
+#define ZYPHER_ERR_INTEGRITY 3
+#define ZYPHER_ERR_DEBUGGER 6
 
 /* Access extension globals */
 #ifdef ZTS
@@ -66,6 +74,8 @@ int zypher_verify_integrity(void);
 int zypher_check_debugger(void);
 int zypher_verify_license(const char *domain, time_t timestamp);
 void zypher_derive_key(const char *master_key, const char *filename, char *output_key, int iterations);
+int verify_content_integrity(const char *content, size_t length, const char *expected_checksum);
+void calculate_content_checksum(const char *content, size_t length, char *output);
 
 /* PHP functions exported by the extension */
 PHP_FUNCTION(zypher_decode_string);

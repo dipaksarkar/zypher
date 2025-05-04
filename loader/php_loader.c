@@ -20,17 +20,9 @@
 /* Store original compile file function */
 zend_op_array *(*original_compile_file)(zend_file_handle *file_handle, int type);
 
-/* Constants for file format */
-#define ZYPHER_SIGNATURE "ZYPH01"
-#define SIGNATURE_LENGTH 6
-#define IV_LENGTH 16
-#define KEY_HMAC_LENGTH 32
-#define ZYPHER_FORMAT_VERSION 1
-#define MAX_KEY_ITERATIONS 1000
-#define ZYPHER_ERR_NONE 0
-#define ZYPHER_ERR_EXPIRED 1
-#define ZYPHER_ERR_DOMAIN 2
-#define ZYPHER_ERR_TAMPERED 3
+/* Override the DEBUG definition from php_loader.h with our runtime version */
+#undef DEBUG
+#define DEBUG (ZYPHER_G(debug_mode) && php_get_module_initialized())
 
 /* For compatibility with PHP thread safety */
 #ifdef ZTS
@@ -86,6 +78,7 @@ static void php_zypher_init_globals(zend_zypher_globals *globals)
     globals->license_expiry = 0;
     globals->debugger_protection = 1;
     globals->self_healing = 0;
+    globals->debug_mode = 0; /* Initialize debug_mode to 0 */
     memset(globals->anti_tamper_hash, 0, sizeof(globals->anti_tamper_hash));
 }
 
@@ -177,7 +170,7 @@ void zypher_derive_key(const char *master_key, const char *filename, char *outpu
     unsigned char hash[SHA256_DIGEST_LENGTH];
     char salt[128];
 
-    // Create a salt based on filename
+    // Create a salt based on filename (matching encoder implementation)
     snprintf(salt, sizeof(salt), "ZypherSalt-%s", filename);
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
@@ -188,7 +181,7 @@ void zypher_derive_key(const char *master_key, const char *filename, char *outpu
     // Multiple iterations for key strengthening
     for (int i = 0; i < iterations && i < MAX_KEY_ITERATIONS; i++)
     {
-        // Add iteration counter to salt
+        // Add iteration counter to salt (matching encoder implementation)
         snprintf(salt, sizeof(salt), "ZypherSalt-%s-%d", filename, i);
         HMAC(EVP_sha256(), master_key, strlen(master_key),
              hash, sizeof(hash), hash, NULL);
@@ -213,6 +206,7 @@ void zypher_derive_key(const char *master_key, const char *filename, char *outpu
         HMAC_CTX_reset(ctx);
         HMAC_Init_ex(ctx, master_key, strlen(master_key), EVP_sha256(), NULL);
         HMAC_Update(ctx, hash, sizeof(hash));
+        // Add iteration counter to match encode.php implementation
         HMAC_Update(ctx, (unsigned char *)&i, sizeof(i));
         HMAC_Final(ctx, hash, &len);
     }
@@ -333,7 +327,7 @@ static char *read_file_contents(const char *filename, size_t *size)
 }
 
 /* Check if content has been tampered with via checksum */
-static int verify_content_integrity(const char *content, size_t content_len, const char *checksum)
+int verify_content_integrity(const char *content, size_t content_len, const char *checksum)
 {
     char calculated_checksum[33];
     PHP_MD5_CTX context;
@@ -362,7 +356,7 @@ static char *decrypt_file_content(const char *encoded_content, size_t encoded_le
     EVP_CIPHER_CTX *ctx;
     const EVP_CIPHER *cipher;
     unsigned char iv[IV_LENGTH];
-    unsigned char master_iv[IV_LENGTH];
+    unsigned char key_iv[IV_LENGTH]; /* For new format with separate IVs */
     char *decrypted = NULL;
     int outlen, tmplen;
     zend_string *decoded_str;
@@ -378,17 +372,25 @@ static char *decrypt_file_content(const char *encoded_content, size_t encoded_le
     int has_byte_rotation = 0;
     char extracted_checksum[33] = {0};
 
-    /* New variables for enhanced format */
-    int security_flags = 0;
-
-    // Debug output
+    /* Debug output */
     if (DEBUG)
     {
         php_printf("DEBUG: Decrypting content of length %zu\n", encoded_length);
     }
 
-    /* Base64 decode first */
-    decoded_str = php_base64_decode((const unsigned char *)encoded_content, encoded_length);
+    /* Check for Zypher signature */
+    if (encoded_length < SIGNATURE_LENGTH || strncmp(encoded_content, ZYPHER_SIGNATURE, SIGNATURE_LENGTH) != 0)
+    {
+        if (DEBUG)
+            php_printf("DEBUG: Invalid signature\n");
+        return NULL;
+    }
+
+    /* Base64 decode the content after signature */
+    decoded_str = php_base64_decode(
+        (const unsigned char *)encoded_content + SIGNATURE_LENGTH,
+        encoded_length - SIGNATURE_LENGTH);
+
     if (!decoded_str)
     {
         if (DEBUG)
@@ -401,13 +403,13 @@ static char *decrypt_file_content(const char *encoded_content, size_t encoded_le
         php_printf("DEBUG: Base64 decoded length: %zu bytes\n", ZSTR_LEN(decoded_str));
     }
 
-    /* Check for byte rotation */
+    /* Handle byte rotation if present (enhanced format) */
     char *rotated_content = NULL;
 
-    /* Handle byte rotation if this is the enhanced format */
+    /* Check if first byte value suggests byte rotation (+7) */
     if (ZSTR_LEN(decoded_str) > 0)
     {
-        /* Simple heuristic: check if first byte is likely version byte (1) */
+        /* Simple heuristic: check if first byte is likely version byte (1) rotated by +7 */
         if ((unsigned char)ZSTR_VAL(decoded_str)[0] == (1 + 7) % 256)
         {
             has_byte_rotation = 1;
@@ -421,11 +423,11 @@ static char *decrypt_file_content(const char *encoded_content, size_t encoded_le
             rotated_content = emalloc(ZSTR_LEN(decoded_str) + 1);
             for (size_t i = 0; i < ZSTR_LEN(decoded_str); i++)
             {
-                rotated_content[i] = (char)((unsigned char)(ZSTR_VAL(decoded_str)[i]) - 7) & 0xFF;
+                rotated_content[i] = (char)((unsigned char)(ZSTR_VAL(decoded_str)[i] - 7) & 0xFF);
             }
             rotated_content[ZSTR_LEN(decoded_str)] = '\0';
 
-            /* Use the rotated content instead of the original */
+            /* Replace decoded_str with rotated content for further processing */
             zend_string *old_str = decoded_str;
             decoded_str = zend_string_init(rotated_content, ZSTR_LEN(old_str), 0);
             zend_string_release(old_str);
@@ -446,224 +448,242 @@ static char *decrypt_file_content(const char *encoded_content, size_t encoded_le
         decrypted[ZSTR_LEN(decoded_str)] = '\0';
 
         if (out_length)
-        {
             *out_length = ZSTR_LEN(decoded_str);
-        }
 
         zend_string_release(decoded_str);
         return decrypted;
     }
 
-    /* Production mode - handle enhanced format */
-    if (DEBUG)
-        php_printf("DEBUG: Production mode detected - processing enhanced format\n");
+    /* Parse the enhanced format */
+    pos = 0;
+    unsigned char *data = (unsigned char *)ZSTR_VAL(decoded_str);
+    size_t data_len = ZSTR_LEN(decoded_str);
 
-    /* Check minimum size for new format */
-    if (ZSTR_LEN(decoded_str) <= 1 + 4 + (IV_LENGTH * 2) + 4)
+    /* Make sure we have enough data for the version byte */
+    if (data_len < pos + 1)
     {
         if (DEBUG)
-            php_printf("DEBUG: Decoded data too short for format header\n");
+            php_printf("DEBUG: Data too short for version byte\n");
         zend_string_release(decoded_str);
         return NULL;
     }
 
-    /* Check for enhanced format (version byte) */
-    format_version = (unsigned char)ZSTR_VAL(decoded_str)[pos++];
+    /* Extract format version */
+    format_version = data[pos++];
 
     if (DEBUG)
     {
         php_printf("DEBUG: Format version: %d\n", format_version);
     }
 
-    /* Process according to format version */
-    if (format_version == ZYPHER_FORMAT_VERSION)
+    /* Verify expected format version */
+    if (format_version != ZYPHER_FORMAT_VERSION)
     {
-        /* Enhanced format with timestamp */
-        memcpy(&timestamp, ZSTR_VAL(decoded_str) + pos, 4);
-        timestamp = ntohl(timestamp); /* Network to host byte order */
-        pos += 4;
-
         if (DEBUG)
-        {
-            php_printf("DEBUG: Timestamp: %u (%s)\n", timestamp, ctime((time_t *)&timestamp));
-        }
-
-        /* License verification */
-        int license_result = zypher_verify_license(NULL, timestamp);
-        if (license_result != ZYPHER_ERR_NONE)
-        {
-            if (license_result == ZYPHER_ERR_EXPIRED)
-            {
-                php_error_docref(NULL, E_WARNING, "License expired");
-            }
-            else if (license_result == ZYPHER_ERR_DOMAIN)
-            {
-                php_error_docref(NULL, E_WARNING, "Domain not licensed");
-            }
-            zend_string_release(decoded_str);
-            return NULL;
-        }
-    }
-
-    /* Anti-debugging check */
-    if (zypher_check_debugger())
-    {
-        php_error_docref(NULL, E_WARNING, "Debugging tools detected, execution denied");
+            php_printf("DEBUG: Unsupported format version %d (expected %d)\n",
+                       format_version, ZYPHER_FORMAT_VERSION);
         zend_string_release(decoded_str);
         return NULL;
     }
 
-    /* Extract IVs */
-    memcpy(iv, ZSTR_VAL(decoded_str) + pos, IV_LENGTH);
-    pos += IV_LENGTH;
-
-    if (DEBUG)
+    /* Check for timestamp */
+    if (data_len < pos + 4)
     {
-        /* Convert IV to hex for debugging */
-        for (int i = 0; i < IV_LENGTH; i++)
-        {
-            sprintf(debug_hex + (i * 2), "%02x", iv[i]);
-        }
-        debug_hex[IV_LENGTH * 2] = '\0';
-        php_printf("DEBUG: Extracted content IV (hex): %s\n", debug_hex);
+        if (DEBUG)
+            php_printf("DEBUG: Data too short for timestamp\n");
+        zend_string_release(decoded_str);
+        return NULL;
     }
 
-    memcpy(master_iv, ZSTR_VAL(decoded_str) + pos, IV_LENGTH);
-    pos += IV_LENGTH;
-
-    if (DEBUG)
-    {
-        /* Convert master IV to hex for debugging */
-        for (int i = 0; i < IV_LENGTH; i++)
-        {
-            sprintf(debug_hex + (i * 2), "%02x", master_iv[i]);
-        }
-        debug_hex[IV_LENGTH * 2] = '\0';
-        php_printf("DEBUG: Extracted key IV (hex): %s\n", debug_hex);
-    }
-
-    /* Read key length (4 bytes, big-endian) */
-    memcpy(&key_length, ZSTR_VAL(decoded_str) + pos, 4);
-    key_length = ntohl(key_length); /* Convert from network byte order to host byte order */
+    /* Extract timestamp (big endian) */
+    timestamp = (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3];
     pos += 4;
 
     if (DEBUG)
     {
-        php_printf("DEBUG: Extracted key length: %u bytes\n", key_length);
+        php_printf("DEBUG: Timestamp: %u\n", timestamp);
     }
 
-    /* Validate key length to prevent buffer overflows */
-    if (key_length > 1024 || pos + key_length > ZSTR_LEN(decoded_str))
+    /* Verify license based on timestamp */
+    int license_error = zypher_verify_license(NULL, timestamp);
+    if (license_error != ZYPHER_ERR_NONE)
     {
         if (DEBUG)
         {
-            php_printf("DEBUG: Invalid key length %u (buffer size: %zu, pos: %zu)\n",
-                       key_length, ZSTR_LEN(decoded_str), pos);
+            switch (license_error)
+            {
+            case ZYPHER_ERR_EXPIRED:
+                php_printf("DEBUG: License expired\n");
+                break;
+            case ZYPHER_ERR_DOMAIN:
+                php_printf("DEBUG: Domain mismatch\n");
+                break;
+            default:
+                php_printf("DEBUG: License error %d\n", license_error);
+                break;
+            }
         }
         zend_string_release(decoded_str);
         return NULL;
+    }
+
+    /* Extract content IV */
+    if (data_len < pos + IV_LENGTH)
+    {
+        if (DEBUG)
+            php_printf("DEBUG: Data too short for content IV\n");
+        zend_string_release(decoded_str);
+        return NULL;
+    }
+
+    memcpy(iv, data + pos, IV_LENGTH);
+    pos += IV_LENGTH;
+
+    if (DEBUG)
+    {
+        char hex_iv[IV_LENGTH * 2 + 1];
+        for (int i = 0; i < IV_LENGTH; i++)
+            sprintf(hex_iv + i * 2, "%02x", iv[i]);
+        hex_iv[IV_LENGTH * 2] = '\0';
+        php_printf("DEBUG: Content IV: %s\n", hex_iv);
+    }
+
+    /* Extract key IV */
+    if (data_len < pos + IV_LENGTH)
+    {
+        if (DEBUG)
+            php_printf("DEBUG: Data too short for key IV\n");
+        zend_string_release(decoded_str);
+        return NULL;
+    }
+
+    memcpy(key_iv, data + pos, IV_LENGTH);
+    pos += IV_LENGTH;
+
+    if (DEBUG)
+    {
+        char hex_key_iv[IV_LENGTH * 2 + 1];
+        for (int i = 0; i < IV_LENGTH; i++)
+            sprintf(hex_key_iv + i * 2, "%02x", key_iv[i]);
+        hex_key_iv[IV_LENGTH * 2] = '\0';
+        php_printf("DEBUG: Key IV: %s\n", hex_key_iv);
+    }
+
+    /* Extract key length */
+    if (data_len < pos + 4)
+    {
+        if (DEBUG)
+            php_printf("DEBUG: Data too short for key length\n");
+        zend_string_release(decoded_str);
+        return NULL;
+    }
+
+    key_length = (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3];
+    pos += 4;
+
+    if (DEBUG)
+    {
+        php_printf("DEBUG: Key length: %u\n", key_length);
     }
 
     /* Extract encrypted file key */
+    if (data_len < pos + key_length)
+    {
+        if (DEBUG)
+            php_printf("DEBUG: Data too short for encrypted file key\n");
+        zend_string_release(decoded_str);
+        return NULL;
+    }
+
     encrypted_file_key = emalloc(key_length + 1);
-    memcpy(encrypted_file_key, ZSTR_VAL(decoded_str) + pos, key_length);
+    memcpy(encrypted_file_key, data + pos, key_length);
     encrypted_file_key[key_length] = '\0';
     pos += key_length;
 
-    if (DEBUG)
-    {
-        /* Convert part of encrypted key to hex for debugging */
-        int hex_bytes = key_length > 16 ? 16 : key_length;
-        for (int i = 0; i < hex_bytes; i++)
-        {
-            sprintf(debug_hex + (i * 2), "%02x", (unsigned char)encrypted_file_key[i]);
-        }
-        debug_hex[hex_bytes * 2] = '\0';
-        php_printf("DEBUG: Extracted encrypted file key (first %d bytes in hex): %s\n",
-                   hex_bytes, debug_hex);
-    }
-
-    /* Read original filename length (1 byte) */
-    if (pos >= ZSTR_LEN(decoded_str))
+    /* Extract original filename length */
+    if (data_len < pos + 1)
     {
         if (DEBUG)
-        {
-            php_printf("DEBUG: File format error: no space for filename length byte\n");
-        }
+            php_printf("DEBUG: Data too short for filename length\n");
         efree(encrypted_file_key);
         zend_string_release(decoded_str);
         return NULL;
     }
 
-    filename_length = (uint8_t)ZSTR_VAL(decoded_str)[pos++];
+    filename_length = data[pos++];
 
     if (DEBUG)
     {
-        php_printf("DEBUG: Original filename length: %u bytes\n", filename_length);
+        php_printf("DEBUG: Original filename length: %u\n", filename_length);
     }
 
-    /* Validate filename length */
-    if (filename_length == 0 || pos + filename_length > ZSTR_LEN(decoded_str))
+    /* Extract original filename - important for key derivation */
+    if (data_len < pos + filename_length)
     {
         if (DEBUG)
-        {
-            php_printf("DEBUG: Invalid filename length: %u (buffer size: %zu, pos: %zu)\n",
-                       filename_length, ZSTR_LEN(decoded_str), pos);
-        }
+            php_printf("DEBUG: Data too short for original filename\n");
         efree(encrypted_file_key);
         zend_string_release(decoded_str);
         return NULL;
     }
 
-    /* Extract original filename */
     orig_filename = emalloc(filename_length + 1);
-    memcpy(orig_filename, ZSTR_VAL(decoded_str) + pos, filename_length);
+    memcpy(orig_filename, data + pos, filename_length);
     orig_filename[filename_length] = '\0';
     pos += filename_length;
 
     if (DEBUG)
     {
-        php_printf("DEBUG: Extracted original filename: '%s'\n", orig_filename);
+        php_printf("DEBUG: Original filename: %s\n", orig_filename);
     }
 
-    /* Derive master key using enhanced algorithm with multiple iterations */
-    zypher_derive_key(master_key, orig_filename, file_key, 1000);
+    /* The rest is encrypted content */
+    size_t encrypted_content_length = data_len - pos;
+    if (encrypted_content_length == 0)
+    {
+        if (DEBUG)
+            php_printf("DEBUG: No encrypted content\n");
+        efree(encrypted_file_key);
+        efree(orig_filename);
+        zend_string_release(decoded_str);
+        return NULL;
+    }
+
+    /* Derive master key from filename */
+    char derived_key[65];
+
+    /* Use original filename for key derivation, not the current one */
+    zypher_derive_key(master_key, orig_filename, derived_key, 1000);
 
     if (DEBUG)
     {
-        php_printf("DEBUG: Derived file key: %s\n", file_key);
+        php_printf("DEBUG: Derived master key: %s\n", derived_key);
     }
 
-    /* Create decryption context for file key */
+    /* Create OpenSSL cipher context */
     ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+    {
+        if (DEBUG)
+            php_printf("DEBUG: Failed to create cipher context\n");
+        efree(encrypted_file_key);
+        efree(orig_filename);
+        zend_string_release(decoded_str);
+        return NULL;
+    }
+
+    /* Select AES-256-CBC cipher */
     cipher = EVP_aes_256_cbc();
 
-    /* Initialize key decryption operation with derived master key */
-    if (!EVP_DecryptInit_ex(ctx, cipher, NULL, (unsigned char *)file_key, master_iv))
+    /* Decrypt the file key with derived master key */
+    char *decrypted_file_key = emalloc(key_length + EVP_MAX_BLOCK_LENGTH);
+
+    /* Initialize decryption process */
+    if (EVP_DecryptInit_ex(ctx, cipher, NULL,
+                           (unsigned char *)derived_key, key_iv) != 1)
     {
         if (DEBUG)
-        {
-            php_printf("DEBUG: Key decryption initialization failed\n");
-        }
-        EVP_CIPHER_CTX_free(ctx);
-        efree(encrypted_file_key);
-        efree(orig_filename);
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    /* Allocate buffer for decrypted file key */
-    char *decrypted_file_key = emalloc(key_length + EVP_CIPHER_block_size(cipher));
-    int file_key_len = 0, file_key_tmplen = 0;
-
-    /* Decrypt the file key */
-    if (!EVP_DecryptUpdate(ctx, (unsigned char *)decrypted_file_key, &file_key_len,
-                           (unsigned char *)encrypted_file_key, key_length))
-    {
-        if (DEBUG)
-        {
-            php_printf("DEBUG: Key decryption update failed: %s\n", ERR_error_string(ERR_get_error(), NULL));
-        }
+            php_printf("DEBUG: Failed to initialize decryption\n");
         EVP_CIPHER_CTX_free(ctx);
         efree(encrypted_file_key);
         efree(orig_filename);
@@ -672,14 +692,12 @@ static char *decrypt_file_content(const char *encoded_content, size_t encoded_le
         return NULL;
     }
 
-    /* Finalize key decryption */
-    if (!EVP_DecryptFinal_ex(ctx, (unsigned char *)decrypted_file_key + file_key_len, &file_key_tmplen))
+    /* Perform decryption */
+    if (EVP_DecryptUpdate(ctx, (unsigned char *)decrypted_file_key, &outlen,
+                          (unsigned char *)encrypted_file_key, key_length) != 1)
     {
         if (DEBUG)
-        {
-            php_printf("DEBUG: Key decryption finalization failed: %s\n", ERR_error_string(ERR_get_error(), NULL));
-            php_printf("DEBUG: This often happens due to padding issues or incorrect key/IV\n");
-        }
+            php_printf("DEBUG: Failed to decrypt file key\n");
         EVP_CIPHER_CTX_free(ctx);
         efree(encrypted_file_key);
         efree(orig_filename);
@@ -688,135 +706,119 @@ static char *decrypt_file_content(const char *encoded_content, size_t encoded_le
         return NULL;
     }
 
-    file_key_len += file_key_tmplen;
-    decrypted_file_key[file_key_len] = '\0';
+    /* Finalize decryption */
+    if (EVP_DecryptFinal_ex(ctx, (unsigned char *)decrypted_file_key + outlen, &tmplen) != 1)
+    {
+        if (DEBUG)
+            php_printf("DEBUG: Failed to finalize key decryption\n");
+        EVP_CIPHER_CTX_free(ctx);
+        efree(encrypted_file_key);
+        efree(orig_filename);
+        efree(decrypted_file_key);
+        zend_string_release(decoded_str);
+        return NULL;
+    }
+
+    outlen += tmplen;
+    decrypted_file_key[outlen] = '\0';
 
     if (DEBUG)
     {
-        php_printf("DEBUG: File key decrypted successfully (length: %d bytes)\n", file_key_len);
+        php_printf("DEBUG: Decrypted file key: %s (length: %d)\n", decrypted_file_key, outlen);
     }
 
-    /* Clean up key decryption context */
-    EVP_CIPHER_CTX_free(ctx);
-    efree(encrypted_file_key);
-    efree(orig_filename); /* Clean up original filename buffer */
+    /* Now decrypt actual file content using the decrypted file key */
+    EVP_CIPHER_CTX_reset(ctx);
 
-    /* Now use the decrypted file key to decrypt the content */
-    ctx = EVP_CIPHER_CTX_new();
-
-    /* Initialize content decryption */
-    if (!EVP_DecryptInit_ex(ctx, cipher, NULL, (unsigned char *)decrypted_file_key, iv))
+    /* Initialize encryption with file key and content IV */
+    if (EVP_DecryptInit_ex(ctx, cipher, NULL,
+                           (unsigned char *)decrypted_file_key, iv) != 1)
     {
         if (DEBUG)
-        {
-            php_printf("DEBUG: Content decryption init failed\n");
-        }
+            php_printf("DEBUG: Failed to initialize content decryption\n");
         EVP_CIPHER_CTX_free(ctx);
+        efree(encrypted_file_key);
+        efree(orig_filename);
         efree(decrypted_file_key);
         zend_string_release(decoded_str);
         return NULL;
     }
 
     /* Allocate memory for decrypted content */
-    size_t content_length = ZSTR_LEN(decoded_str) - pos;
+    decrypted = emalloc(encrypted_content_length + EVP_MAX_BLOCK_LENGTH + 1);
 
-    if (DEBUG)
-    {
-        php_printf("DEBUG: Content length to decrypt: %zu bytes\n", content_length);
-    }
-
-    decrypted = emalloc(content_length + EVP_CIPHER_block_size(cipher));
-
-    /* Decrypt the content */
-    if (!EVP_DecryptUpdate(ctx, (unsigned char *)decrypted, &outlen,
-                           (unsigned char *)ZSTR_VAL(decoded_str) + pos, content_length))
+    /* Perform decryption */
+    if (EVP_DecryptUpdate(ctx, (unsigned char *)decrypted, &outlen,
+                          (unsigned char *)(data + pos), encrypted_content_length) != 1)
     {
         if (DEBUG)
-        {
-            php_printf("DEBUG: Content decryption update failed: %s\n", ERR_error_string(ERR_get_error(), NULL));
-        }
+            php_printf("DEBUG: Failed to decrypt content\n");
         EVP_CIPHER_CTX_free(ctx);
+        efree(encrypted_file_key);
+        efree(orig_filename);
         efree(decrypted_file_key);
         efree(decrypted);
         zend_string_release(decoded_str);
         return NULL;
     }
 
-    /* Finalize content decryption */
-    if (!EVP_DecryptFinal_ex(ctx, (unsigned char *)decrypted + outlen, &tmplen))
+    /* Finalize decryption */
+    if (EVP_DecryptFinal_ex(ctx, (unsigned char *)decrypted + outlen, &tmplen) != 1)
     {
         if (DEBUG)
-        {
-            php_printf("DEBUG: Content decryption finalization failed: %s\n", ERR_error_string(ERR_get_error(), NULL));
-        }
+            php_printf("DEBUG: Failed to finalize content decryption\n");
         EVP_CIPHER_CTX_free(ctx);
+        efree(encrypted_file_key);
+        efree(orig_filename);
         efree(decrypted_file_key);
         efree(decrypted);
         zend_string_release(decoded_str);
         return NULL;
     }
+
+    outlen += tmplen;
+    decrypted[outlen] = '\0';
 
     /* Clean up */
     EVP_CIPHER_CTX_free(ctx);
+    efree(encrypted_file_key);
+    efree(decrypted_file_key);
 
-    /* Set output length */
-    int total_decrypted_len = outlen + tmplen;
-    if (out_length)
-    {
-        *out_length = total_decrypted_len;
-    }
+    /* Extract checksum from the beginning of decrypted data */
+    memcpy(extracted_checksum, decrypted, 32);
+    extracted_checksum[32] = '\0';
 
-    /* Null terminate the decrypted content */
-    decrypted[total_decrypted_len] = '\0';
+    /* Move the actual PHP content to the beginning */
+    memmove(decrypted, decrypted + 32, outlen - 32 + 1);
+    outlen -= 32;
 
     if (DEBUG)
     {
-        php_printf("DEBUG: Content decrypted successfully, length: %d bytes\n", total_decrypted_len);
+        php_printf("DEBUG: Extracted checksum: %s\n", extracted_checksum);
     }
 
-    /* Check if we have a checksum in the enhanced format */
-    if (format_version == ZYPHER_FORMAT_VERSION)
+    /* Verify content integrity with checksum */
+    if (verify_content_integrity(decrypted, outlen, extracted_checksum) != ZYPHER_ERR_NONE)
     {
-        /* Extract MD5 checksum (32 chars) from beginning of decrypted content */
-        memcpy(extracted_checksum, decrypted, 32);
-        extracted_checksum[32] = '\0';
-
         if (DEBUG)
-        {
-            php_printf("DEBUG: Extracted checksum: %s\n", extracted_checksum);
-        }
-
-        /* Verify checksum */
-        char *actual_content = decrypted + 32;
-        int content_len = total_decrypted_len - 32;
-
-        if (verify_content_integrity(actual_content, content_len, extracted_checksum) != ZYPHER_ERR_NONE)
-        {
-            php_error_docref(NULL, E_WARNING, "File integrity verification failed - content may be tampered");
-            efree(decrypted_file_key);
-            efree(decrypted);
-            zend_string_release(decoded_str);
-            return NULL;
-        }
-
-        if (DEBUG)
-        {
-            php_printf("DEBUG: Content integrity verified\n");
-        }
-
-        /* Move the actual content to the beginning of the buffer */
-        memmove(decrypted, actual_content, content_len + 1); // +1 for the null terminator
-
-        /* Update output length */
-        if (out_length)
-        {
-            *out_length = content_len;
-        }
+            php_printf("DEBUG: Content integrity check failed\n");
+        efree(orig_filename);
+        efree(decrypted);
+        zend_string_release(decoded_str);
+        return NULL;
     }
 
-    efree(decrypted_file_key);
-    zend_string_release(decoded_str);
+    if (DEBUG)
+    {
+        php_printf("DEBUG: Content integrity verified!\n");
+    }
 
+    /* Set output length */
+    if (out_length)
+        *out_length = outlen;
+
+    efree(orig_filename);
+    zend_string_release(decoded_str);
     return decrypted;
 }
 
@@ -862,7 +864,7 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
         return original_compile_file(file_handle, type);
     }
 
-    /* Check for our signature */
+    /* Check for direct signature at start of file */
     memcpy(signature, buffer, SIGNATURE_LENGTH);
     signature[SIGNATURE_LENGTH] = '\0';
 
@@ -875,8 +877,11 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
     {
         is_encoded = 1;
         if (DEBUG)
-            php_printf("DEBUG: File is encoded with Zypher\n");
+            php_printf("DEBUG: File is directly encoded with Zypher\n");
+    }
 
+    if (is_encoded)
+    {
         /* Get the filename we should use for key derivation - just the base name like the encoder does */
         char *filename_dup = estrndup(filename, strlen(filename));
         char *base_name = basename(filename_dup);
@@ -886,21 +891,16 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
                                        buffer_len - SIGNATURE_LENGTH,
                                        ZYPHER_MASTER_KEY, base_name, &decoded_len);
 
-        /* Free memory for duplicated filename */
+        /* Free memory for duplicated filename and buffer */
         efree(filename_dup);
+        efree(buffer);
 
         if (!decoded)
         {
             php_error_docref(NULL, E_WARNING, "Failed to decrypt encoded file: %s", filename);
             if (DEBUG)
                 php_printf("DEBUG: Decryption failed\n");
-            efree(buffer);
             return NULL;
-        }
-
-        if (DEBUG)
-        {
-            php_printf("DEBUG: Decryption successful, got %zu bytes of decoded content\n", decoded_len);
         }
 
         /* Create a temporary file for the decoded content */
@@ -917,7 +917,6 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
             php_error_docref(NULL, E_WARNING, "Failed to create temporary file");
             if (DEBUG)
                 php_printf("DEBUG: Failed to create temp file\n");
-            efree(buffer);
             efree(decoded);
             efree(tempname);
             return NULL;
@@ -936,7 +935,6 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
             unlink(tempname);
             if (DEBUG)
                 php_printf("DEBUG: Failed to open temp file as stream\n");
-            efree(buffer);
             efree(decoded);
             efree(tempname);
             return NULL;
@@ -949,7 +947,6 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
             unlink(tempname);
             if (DEBUG)
                 php_printf("DEBUG: Failed to write decoded content to temp file\n");
-            efree(buffer);
             efree(decoded);
             efree(tempname);
             return NULL;
@@ -973,7 +970,6 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
             unlink(tempname);
             if (DEBUG)
                 php_printf("DEBUG: Failed to reopen temp file for reading\n");
-            efree(buffer);
             efree(decoded);
             efree(tempname);
             return NULL;
@@ -1005,7 +1001,6 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
         fclose(decoded_file_handle.handle.fp);
         unlink(tempname);
         efree(tempname);
-        efree(buffer);
         efree(decoded);
         return op_array;
     }
@@ -1052,6 +1047,7 @@ PHP_FUNCTION(zypher_decode_string)
         char hex_byte[3] = {hex_str[i], hex_str[i + 1], 0};
         bin[j] = (unsigned char)strtol(hex_byte, NULL, 16);
     }
+    bin[bin_len] = '\0';
 
     // XOR decode the binary data with the key
     unsigned char *result = (unsigned char *)emalloc(bin_len + 1);
