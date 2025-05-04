@@ -18,10 +18,38 @@ extern zend_module_entry zypher_module_entry;
 
 /* Define the extension globals */
 ZEND_BEGIN_MODULE_GLOBALS(zypher)
+char *license_domain;               /* Licensed domain */
+time_t license_expiry;              /* License expiration timestamp */
+unsigned char anti_tamper_hash[32]; /* Hash to verify extension integrity */
+int debugger_protection;            /* Enable/disable anti-debugging features */
+int self_healing;                   /* Enable self-healing code */
 ZEND_END_MODULE_GLOBALS(zypher)
 
 /* Define a master key constant (used to decrypt per-file keys) */
 #define ZYPHER_MASTER_KEY "Zypher-Master-Key-X7pQ9r2s"
+#define ZYPHER_SIGNATURE "ZYPH01"
+#define IV_LENGTH 16
+#define MAX_KEY_ITERATIONS 5000
+
+/* File format version */
+#define ZYPHER_FORMAT_VERSION 1
+
+/* Define security flags */
+#define ZYPHER_FLAG_EXPIRE 0x0001      /* Content has expiry date */
+#define ZYPHER_FLAG_DEBUG_PROT 0x0002  /* Anti-debug protection enabled */
+#define ZYPHER_FLAG_DOMAIN_LOCK 0x0004 /* Domain locked content */
+#define ZYPHER_FLAG_CHECKSUM 0x0008    /* Content includes checksum */
+#define ZYPHER_FLAG_OBFUSCATED 0x0010  /* Content is obfuscated */
+#define ZYPHER_FLAG_BYTE_ROTATE 0x0020 /* Content bytes are rotated */
+
+/* Error codes */
+#define ZYPHER_ERR_NONE 0
+#define ZYPHER_ERR_CORRUPT 1
+#define ZYPHER_ERR_EXPIRED 2
+#define ZYPHER_ERR_DOMAIN 3
+#define ZYPHER_ERR_TAMPERED 4
+#define ZYPHER_ERR_DEBUG 5
+#define ZYPHER_ERR_UNKNOWN 99
 
 /* Access extension globals */
 #ifdef ZTS
@@ -32,5 +60,14 @@ ZEND_END_MODULE_GLOBALS(zypher)
 
 /* Function declarations */
 zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type);
+
+/* Security-related functions */
+int zypher_verify_integrity(void);
+int zypher_check_debugger(void);
+int zypher_verify_license(const char *domain, time_t timestamp);
+void zypher_derive_key(const char *master_key, const char *filename, char *output_key, int iterations);
+
+/* PHP functions exported by the extension */
+PHP_FUNCTION(zypher_decode_string);
 
 #endif /* PHP_ZYPHER_H */
