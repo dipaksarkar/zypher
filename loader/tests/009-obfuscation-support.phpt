@@ -1,9 +1,7 @@
 --TEST--
 Zypher obfuscation support
---SKIPIF--
-<?php
-if (!extension_loaded('zypher')) echo 'skip zypher extension not available';
-?>
+--INI--
+extension=modules/zypher.so
 --FILE--
 <?php
 /**
@@ -16,6 +14,10 @@ $encoderPath = dirname(__DIR__) . '/../encoder/encode.php';
 if (!file_exists($encoderPath)) {
     die("Encoder not found at: $encoderPath\n");
 }
+
+// Check extension loaded - ignoring any "already loaded" warnings
+// Core PHP testing system might have already loaded the extension
+@extension_loaded('zypher') or die("Zypher extension not loaded\n");
 
 // Create temporary files for the test
 $testDir = sys_get_temp_dir() . '/zypher_test_' . uniqid();
@@ -78,13 +80,20 @@ echo "Evidence of obfuscation in output: " . ($containsObfuscatedContent ? "YES"
 echo "\nTest completed\n";
 ?>
 --EXPECTF--
-Zypher obfuscation test
+%aZypher obfuscation test
 ======================
 
 Running encoder: php "%s" "%s" "%s" --obfuscate --verbose %s
 Encoder output:
 ---------------
-%s
+=== Zypher PHP Encoder ===
+Source: %s
+Destination: %s
+Processing file...
+DEBUG: Generated random file key: %s (length: 32)
+DEBUG: CustomSecretKey123
+DEBUG: Using master key: %s
+Applying code obfuscation techniques to %s%s
 
 Results:
 --------
