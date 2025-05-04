@@ -12,6 +12,7 @@
 
 // Default master key - Used to encrypt the per-file random key
 define('MASTER_KEY', 'Zypher-Master-Key-X7pQ9r2s');
+define('ZYPHER_SIGNATURE', 'ZYPH01');
 define('DEBUG', false); // Set to false for AES encryption
 
 // The stub that will be prepended to the encoded file - make sure it contains exactly "the Zypher Loader for PHP" for tests
@@ -80,7 +81,7 @@ if ($source_content === false) {
 // Use a simpler encryption for debugging
 if (DEBUG) {
     // For testing, use simple base64 instead of AES to ensure the extension works
-    $encoded_content = "ZYPH00" . base64_encode($source_content);
+    $encoded_content = ZYPHER_SIGNATURE . base64_encode($source_content);
     if (!$quiet_mode) {
         echo "DEBUG: Using simple base64 encoding for debugging\n";
     }
@@ -143,7 +144,7 @@ if (DEBUG) {
     $encoded_content = base64_encode($final_content);
 
     // Add a signature to identify this as a Zypher encoded file
-    $encoded_content = "ZYPH02" . $encoded_content; // New version with embedded key
+    $encoded_content = ZYPHER_SIGNATURE . $encoded_content; // New version with embedded key
 }
 
 // Prepend the stub to the encoded content

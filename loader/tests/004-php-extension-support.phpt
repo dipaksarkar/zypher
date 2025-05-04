@@ -6,8 +6,6 @@ if (!extension_loaded('zypher')) {
     echo 'skip Zypher extension not loaded';
 }
 ?>
---INI--
-zypher.license_check_enabled=0
 --FILE--
 <?php
 // Create a simple test file with a unique output message

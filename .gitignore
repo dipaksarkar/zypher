@@ -64,7 +64,3 @@ local_settings.php
 # Dependency directories
 vendor/
 node_modules/
-
-# Customer specific license files
-licenses/*
-!licenses/license.key

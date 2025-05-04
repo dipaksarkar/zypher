@@ -8,7 +8,6 @@ Zypher is a PHP source code encryption system that protects your PHP code with A
 
 - **AES-256-CBC Encryption**: Strong encryption to protect your PHP source code
 - **PHP Extension**: Fast C-based decryption at runtime
-- **License Management**: Control access based on expiration dates and features
 - **Simple Implementation**: Easy to use and integrate with existing PHP projects
 - **Customizable**: Configure encryption keys and licensing parameters
 - **Standard PHP Extension**: Encoded files maintain the standard `.php` extension
@@ -37,8 +36,6 @@ Add the following to your php.ini file:
 
 ```ini
 extension=zypher.so
-zypher.license_path=/path/to/license.key
-zypher.license_check_enabled=1
 ```
 
 ## Usage
@@ -69,22 +66,9 @@ Encoded files are standard PHP files with a special structure:
 2. The actual encoded content follows the stub, marked with a signature
 3. When executed on a system with Zypher installed, the content is automatically decoded and executed
 
-## License File Format
-
-Create a license file with the following format:
-
-```
-License-Key: ZYPHER-XXXX-XXXX-XXXX-XXXX
-Customer: Customer Name
-Expires: YYYY-MM-DD
-Type: Enterprise|Standard|Basic
-Features: Feature1,Feature2,Feature3
-```
-
 ## Security Considerations
 
 - Keep your encryption key secure and different from the default
-- Use a secure method to distribute license files
 - Regularly update your encryption keys
 - Consider using different keys for different customers
 
@@ -92,7 +76,6 @@ Features: Feature1,Feature2,Feature3
 
 - **Bus Error/Segmentation Fault**: Check PHP compatibility and memory allocation
 - **Decoding Failed**: Ensure encryption keys match between encoding and decoding
-- **License Invalid**: Verify license file format and expiration dates
 
 ## License
 

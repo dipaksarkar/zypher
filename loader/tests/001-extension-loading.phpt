@@ -4,8 +4,6 @@ Check if Zypher extension is loaded
 <?php
 // Nothing to skip - we specifically want to test if the extension loads
 ?>
---INI--
-zypher.license_check_enabled=0
 --FILE--
 <?php
 echo "Zypher extension is available\n";
