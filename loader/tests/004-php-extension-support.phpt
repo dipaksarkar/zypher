@@ -1,0 +1,52 @@
+--TEST--
+Test loading of encoded files with .php extension
+--SKIPIF--
+<?php
+if (!extension_loaded('zypher')) {
+    echo 'skip Zypher extension not loaded';
+}
+?>
+--INI--
+zypher.license_check_enabled=0
+zypher.encryption_key=TestKey123
+--FILE--
+<?php
+// Create a simple test file with a unique output message
+$test_file = __DIR__ . '/test_php_extension.php';
+file_put_contents($test_file, '<?php echo "Unique message: XYZ-123-ZYPHER"; ?>');
+
+// Path to the encoder 
+$encoder_path = dirname(dirname(__DIR__)) . '/encoder/encode.php';
+$encoded_file = __DIR__ . '/test_php_extension_encoded.php';
+
+// Encode the file
+$cmd = "php $encoder_path $test_file $encoded_file";
+passthru($cmd, $return_var);
+
+// Verify the file was encoded correctly
+if (!file_exists($encoded_file)) {
+    die("Failed to create encoded file");
+}
+
+// Execute the encoded file - the Zypher extension should decode and run it
+ob_start();
+include $encoded_file;
+$output = ob_get_clean();
+
+// Verify the original code was executed (which means the extension successfully decoded it)
+if ($output === "Unique message: XYZ-123-ZYPHER") {
+    echo "Extension successfully decoded and executed .php encoded file\n";
+} else {
+    echo "Error: Extension failed to decode or execute .php encoded file\n";
+    echo "Output was: " . $output . "\n";
+}
+
+// Clean up
+@unlink($test_file);
+@unlink($encoded_file);
+
+echo "Done\n";
+?>
+--EXPECT--
+Extension successfully decoded and executed .php encoded file
+Done

@@ -18,6 +18,20 @@ loader/libtool
 loader/Makefile.*
 !loader/Makefile.fragments
 
+# Test files and artifacts
+loader/tests/*.diff
+loader/tests/*.exp
+loader/tests/*.log
+loader/tests/*.out
+loader/tests/*.php
+loader/tests/*.sh
+loader/downloaded-run-tests.php
+loader/tmp-php.ini
+tests/*_encoded.php
+tests/test_*.php
+tests/test_*_encoded.php
+php_test_results_*
+
 # Compiled encoded files
 *.penc
 
