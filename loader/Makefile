@@ -10,7 +10,7 @@ SHLIB_SUFFIX_NAME = dylib
 SHLIB_DL_SUFFIX_NAME = so
 AWK = awk
 ZYPHER_SHARED_LIBADD = -Wl,-rpath,/usr/local/lib -L/usr/local/lib -lcrypto -Wl,-rpath,/usr/local/lib -L/usr/local/lib -lssl
-shared_objects_zypher = php_loader.lo
+shared_objects_zypher = src/main.lo src/decrypt.lo src/security.lo src/utils.lo
 PHP_PECL_EXTENSION = zypher
 PHP_MODULES = $(phplibdir)/zypher.la
 PHP_ZEND_EX =
@@ -40,7 +40,7 @@ LDFLAGS =
 SHARED_LIBTOOL =
 LIBTOOL = $(SHELL) $(top_builddir)/libtool
 SHELL = /bin/sh
-INSTALL_HEADERS = ext/zypher/php_loader.h
+INSTALL_HEADERS = ext/zypher/php_loader.h ext/zypher/src/main.h ext/zypher/src/decrypt.h ext/zypher/src/security.h ext/zypher/src/utils.h
 BUILD_CC = cc
 mkinstalldirs = $(top_srcdir)/build/shtool mkdir -p
 INSTALL = $(top_srcdir)/build/shtool install -c
@@ -134,12 +134,24 @@ PHP_DEPRECATED_DIRECTIVES_REGEX = '^(magic_quotes_(gpc|runtime|sybase)?|(zend_)?
 
 test: all
 	@if test ! -z "$(PHP_EXECUTABLE)" && test -x "$(PHP_EXECUTABLE)"; then \
+		INI_FILE=`$(PHP_EXECUTABLE) -d 'display_errors=stderr' -r 'echo php_ini_loaded_file();' 2> /dev/null`; \
+		if test "$$INI_FILE"; then \
+			$(EGREP) -h -v $(PHP_DEPRECATED_DIRECTIVES_REGEX) "$$INI_FILE" > $(top_builddir)/tmp-php.ini; \
+		else \
+			echo > $(top_builddir)/tmp-php.ini; \
+		fi; \
+		INI_SCANNED_PATH=`$(PHP_EXECUTABLE) -d 'display_errors=stderr' -r '$$a = explode(",\n", trim(php_ini_scanned_files())); echo $$a[0];' 2> /dev/null`; \
+		if test "$$INI_SCANNED_PATH"; then \
+			INI_SCANNED_PATH=`$(top_srcdir)/build/shtool path -d $$INI_SCANNED_PATH`; \
+			$(EGREP) -h -v $(PHP_DEPRECATED_DIRECTIVES_REGEX) "$$INI_SCANNED_PATH"/*.ini >> $(top_builddir)/tmp-php.ini; \
+		fi; \
 		TEST_PHP_EXECUTABLE=$(PHP_EXECUTABLE) \
 		TEST_PHP_SRCDIR=$(top_srcdir) \
 		CC="$(CC)" \
-			$(PHP_EXECUTABLE) -c /Volumes/Work/zypher/php.ini $(PHP_TEST_SETTINGS) $(top_srcdir)/run-tests.php -c /Volumes/Work/zypher/php.ini -d extension_dir=$(top_builddir)/modules/ $(TESTS); \
+			$(PHP_EXECUTABLE) -n -c $(top_builddir)/tmp-php.ini $(PHP_TEST_SETTINGS) $(top_srcdir)/run-tests.php -n -c $(top_builddir)/tmp-php.ini -d extension_dir=$(top_builddir)/modules/ $(PHP_TEST_SHARED_EXTENSIONS) $(TESTS); \
 		TEST_RESULT_EXIT_CODE=$$?; \
-		if [ $$TEST_RESULT_EXIT_CODE -eq 199 ]; then echo "Ignoring expected extension check error (199)"; exit 0; else exit $$TEST_RESULT_EXIT_CODE; fi; \
+		rm $(top_builddir)/tmp-php.ini; \
+		exit $$TEST_RESULT_EXIT_CODE; \
 	else \
 		echo "ERROR: Cannot run tests without CLI sapi."; \
 	fi
@@ -193,9 +205,18 @@ prof-use:
 
 .PHONY: all clean install distclean test prof-gen prof-clean prof-use
 .NOEXPORT:
--include php_loader.dep
-php_loader.lo: /Volumes/Work/zypher/loader/php_loader.c
-	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/php_loader.c -o php_loader.lo  -MMD -MF php_loader.dep -MT php_loader.lo
+-include src/main.dep
+src/main.lo: /Volumes/Work/zypher/loader/src/main.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/src/main.c -o src/main.lo  -MMD -MF src/main.dep -MT src/main.lo
+-include src/decrypt.dep
+src/decrypt.lo: /Volumes/Work/zypher/loader/src/decrypt.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/src/decrypt.c -o src/decrypt.lo  -MMD -MF src/decrypt.dep -MT src/decrypt.lo
+-include src/security.dep
+src/security.lo: /Volumes/Work/zypher/loader/src/security.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/src/security.c -o src/security.lo  -MMD -MF src/security.dep -MT src/security.lo
+-include src/utils.dep
+src/utils.lo: /Volumes/Work/zypher/loader/src/utils.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/src/utils.c -o src/utils.lo  -MMD -MF src/utils.dep -MT src/utils.lo
 $(phplibdir)/zypher.la: ./zypher.la
 	$(LIBTOOL) --tag=CC --mode=install cp ./zypher.la $(phplibdir)
 

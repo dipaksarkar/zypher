@@ -33,7 +33,10 @@ if test "$PHP_ZYPHER" != "no"; then
     PHP_ADD_LIBRARY_WITH_PATH(crypto, $OPENSSL_DIR/$PHP_LIBDIR, ZYPHER_SHARED_LIBADD)
   fi
 
+  # Define source files
+  ZYPHER_SOURCES="src/main.c src/decrypt.c src/security.c src/utils.c"
+
   PHP_SUBST(ZYPHER_SHARED_LIBADD)
-  PHP_NEW_EXTENSION(zypher, php_loader.c, $ext_shared,, -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1)
-  PHP_INSTALL_HEADERS([ext/zypher], [php_loader.h])
+  PHP_NEW_EXTENSION(zypher, $ZYPHER_SOURCES, $ext_shared,, -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1)
+  PHP_INSTALL_HEADERS([ext/zypher], [src/php_loader.h src/main.h src/decrypt.h src/security.h src/utils.h])
 fi
