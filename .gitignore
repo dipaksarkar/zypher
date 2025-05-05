@@ -67,3 +67,5 @@ node_modules/
 tests/output
 
 composer.lock
+phpunit.xml
+.phpunit.cache

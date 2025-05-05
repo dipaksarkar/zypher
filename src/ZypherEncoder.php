@@ -42,6 +42,12 @@ class ZypherEncoder
     public function __construct(EncoderOptions $options)
     {
         $this->options = $options;
+        
+        // If no custom master key was provided, use the one from environment variables
+        if (empty($this->options->masterKey)) {
+            $this->options->masterKey = Constants::getMasterKey();
+        }
+        
         $this->obfuscator = new Obfuscator();
     }
 

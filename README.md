@@ -45,38 +45,38 @@ composer install
 ### Basic Usage
 
 ```bash
-./bin/zypher-encode /path/to/source.php /path/to/output.php
+./bin/zypher /path/to/source.php /path/to/output.php
 ```
 
 ### Directory Encoding
 
 ```bash
-./bin/zypher-encode /path/to/source/dir /path/to/output/dir
+./bin/zypher /path/to/source/dir /path/to/output/dir
 ```
 
 ### With Custom Master Key
 
 ```bash
-./bin/zypher-encode /path/to/source.php /path/to/output.php --master-key=your_secure_key
+./bin/zypher /path/to/source.php /path/to/output.php --master-key=your_secure_key
 ```
 
 ### With Obfuscation Options
 
 ```bash
-./bin/zypher-encode /path/to/source.php /path/to/output.php --obfuscate --string-encryption --junk-code
+./bin/zypher /path/to/source.php /path/to/output.php --obfuscate --string-encryption --junk-code
 ```
 
 ### Exclude Files
 
 ```bash
-./bin/zypher-encode /path/to/source/dir /path/to/output/dir --exclude=vendor/*,tests/*
+./bin/zypher /path/to/source/dir /path/to/output/dir --exclude=vendor/*,tests/*
 ```
 
 ### Quiet or Verbose Mode
 
 ```bash
-./bin/zypher-encode /path/to/source.php /path/to/output.php --quiet
-./bin/zypher-encode /path/to/source.php /path/to/output.php --verbose
+./bin/zypher /path/to/source.php /path/to/output.php --quiet
+./bin/zypher /path/to/source.php /path/to/output.php --verbose
 ```
 
 ## Command-line Options
@@ -94,7 +94,11 @@ composer install
 
 ## Extension Installation
 
-To run encoded files, you need to install the Zypher Loader extension:
+To run encoded files, you need to install the Zypher Loader extension.
+
+For detailed instructions on building and installing the extension, please see the [Zypher Loader README](loader/README.md).
+
+Quick installation:
 
 ```bash
 cd loader
@@ -104,24 +108,9 @@ make
 sudo make install
 ```
 
-The installation process will:
+The installation process automatically configures PHP to load the extension, no manual editing of php.ini is required.
 
-1. Install the extension binary (`zypher.so`) into your PHP extensions directory
-2. Automatically create `00-zypher.ini` configuration files:
-   - In your PHP CLI configuration directory 
-   - In your PHP-FPM configuration directory (if applicable)
-
-The configuration files will contain the following directive:
-```ini
-zend_extension=/path/to/php/extensions/zypher.so
-```
-
-> **IMPORTANT**: Zypher must be loaded as a `zend_extension` rather than a regular `extension` for proper code decryption. This is similar to how IonCube and other code protection systems work.
-
-If you need to manually configure the extension, you can find the extensions path with:
-```bash
-php -i | grep extension_dir
-```
+> **IMPORTANT**: Zypher is loaded as a `zend_extension` rather than a regular `extension` for proper code decryption.
 
 ## Testing
 
@@ -153,19 +142,7 @@ Note: Integration tests are automatically skipped if the Zypher extension is not
 
 ### Testing with the Extension
 
-To run integration tests, you need to have the Zypher extension installed and enabled:
-
-```bash
-# Build and install the extension
-cd loader
-phpize
-./configure
-make
-sudo make install
-
-# Enable the extension as a Zend extension
-echo "zend_extension=/path/to/php/extensions/zypher.so" | sudo tee -a /path/to/your/php.ini
-```
+To run integration tests, you need to have the Zypher extension installed. Please refer to the [Extension Installation](#extension-installation) section above for installation instructions.
 
 ## Security Recommendations
 

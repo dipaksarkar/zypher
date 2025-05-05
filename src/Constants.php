@@ -13,10 +13,15 @@ namespace Zypher;
 class Constants
 {
     /**
-     * Default master key - Used to encrypt the per-file random key
-     * WARNING: Should be changed in production
+     * Get the master key from the environment or fall back to a default
+     * WARNING: The default should never be used in production
+     * 
+     * @return string The master key to use for encryption
      */
-    const DEFAULT_MASTER_KEY = 'Zypher-Master-Key-X7pQ9r2s';
+    public static function getMasterKey(): string
+    {
+        return getenv('ZYPHER_MASTER_KEY') ?: 'Zypher-Master-Key-X7pQ9r2s';
+    }
 
     /**
      * Signature that marks files as Zypher-encoded

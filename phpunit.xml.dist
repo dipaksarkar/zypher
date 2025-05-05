@@ -20,5 +20,6 @@
 
   <php>
     <ini name="memory_limit" value="512M" />
+    <env name="ZYPHER_MASTER_KEY" value="TestSecureKey-PHPUnit-ZypherTest-2025" />
   </php>
 </phpunit>

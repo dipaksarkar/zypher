@@ -68,27 +68,14 @@ abstract class AbstractStubTest extends TestCase
      * Run a PHP file and capture its output and return value
      *
      * @param string $filePath Path to the PHP file to execute
-     * @param bool $useLoader Whether to use the Zypher loader extension
      * @return array Array with 'output' and 'return' keys
      */
-    protected function executePhpFile(string $filePath, bool $useLoader = false): array
+    protected function executePhpFile(string $filePath): array
     {
         $this->assertFileExists($filePath, "File not found: $filePath");
 
-        // Get the loader path from environment variable or use default
-        $loaderPath = getenv('LOADER_PATH') ?: __DIR__ . '/../loader/modules/zypher.so';
-
-        // Check if we need to skip real execution
-        if ($useLoader && !file_exists($loaderPath)) {
-            $this->markTestSkipped("Loader extension not found at: $loaderPath");
-        }
-
         // Prepare the PHP command
-        $command = 'php ';
-        if ($useLoader) {
-            $command .= "-d extension=$loaderPath ";
-        }
-        $command .= '-d display_errors=1 ' . escapeshellarg($filePath) . ' 2>&1';
+        $command = 'php -d display_errors=1 ' . escapeshellarg($filePath) . ' 2>&1';
 
         // Execute the command and capture output
         exec($command, $outputLines, $returnCode);
@@ -115,8 +102,7 @@ abstract class AbstractStubTest extends TestCase
      */
     protected function isLoaderAvailable(): bool
     {
-        $loaderPath = getenv('LOADER_PATH') ?: __DIR__ . '/../loader/modules/zypher.so';
-        return file_exists($loaderPath);
+        return extension_loaded('zypher');
     }
 
     /**
@@ -193,7 +179,7 @@ abstract class AbstractStubTest extends TestCase
 
         try {
             // Step 2: Execute the encoded file with the loader extension and get its output/return value
-            $encodedResults = $this->executePhpFile($encodedPath, true);
+            $encodedResults = $this->executePhpFile($encodedPath);
 
             // Step 3: Compare the results to ensure they match
 

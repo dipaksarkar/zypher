@@ -63,11 +63,12 @@ make
 sudo make install
 ```
 
-4. **Enable the extension** by adding the following line to your php.ini file:
+The installation process (`make install`) will:
+- Install the extension binary (`zypher.so`) into your PHP extensions directory
+- Create configuration files that automatically load the extension as a Zend extension
+- Add `00-zypher.ini` files to both CLI and PHP-FPM configuration directories (if applicable)
 
-```ini
-extension=zypher.so
-```
+> **IMPORTANT**: Zypher must be loaded as a `zend_extension` rather than a regular `extension` for proper code decryption. The installation process handles this automatically.
 
 ### Verifying Installation
 
