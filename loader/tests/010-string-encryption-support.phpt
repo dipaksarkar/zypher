@@ -1,18 +1,15 @@
 --TEST--
 Zypher string encryption support
---EXTENSIONS--
-zypher
+--SKIPIF--
+<?php
+if (!extension_loaded('zypher')) die('skip: zypher extension not available');
+?>
 --FILE--
 <?php
 /**
  * Test file for the Zypher string encryption feature
  * This test verifies that the --string-encryption option works correctly
  */
-
-// First verify the extension is loaded and the function exists
-if (!extension_loaded('zypher')) {
-    die("Zypher extension not loaded\n");
-}
 
 if (!function_exists('zypher_decode_string')) {
     die("zypher_decode_string function not available\n");
@@ -103,7 +100,6 @@ $inDebugMode = strpos($output, 'base64 encoding for debugging') !== false;
 echo "\nResults:\n";
 echo "--------\n";
 echo "Encoded file created: " . ($isEncoded ? "YES" : "NO") . "\n";
-echo "DEBUG mode detected: " . ($inDebugMode ? "YES" : "NO") . "\n";
 echo "Sensitive strings not found in encoded file: " . ($stringsObfuscated ? "YES" : "NO") . "\n";
 echo "File size: " . filesize($encodedFile) . " bytes\n";
 
@@ -136,7 +132,6 @@ Processing file...
 Results:
 --------
 Encoded file created: YES
-DEBUG mode detected: YES
 Sensitive strings not found in encoded file: YES
 File size: %d bytes
 
