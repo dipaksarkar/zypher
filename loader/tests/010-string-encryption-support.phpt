@@ -9,6 +9,7 @@ if (!extension_loaded('zypher')) die('skip: zypher extension not available');
 /**
  * Test file for the Zypher string encryption feature
  * This test verifies that the --string-encryption option works correctly
+ * and validates that sensitive strings are properly protected in the encoded file
  */
 
 if (!function_exists('zypher_decode_string')) {
@@ -60,10 +61,33 @@ $secretMessage = "This is a secret message that should be encrypted";
 $password = "SuperSecretPassword123!";
 $apiKey = "api-key-12345-abcdefghijklmnopqrstuvwxyz";
 
-// Echo these strings to verify they work after encoding
-echo "Message: " . $secretMessage . "\n";
-echo "Password: " . $password . "\n";
-echo "API Key: " . $apiKey . "\n";
+// Function that uses sensitive strings
+function processSecrets() {
+    global $secretMessage, $password, $apiKey;
+    
+    // Echo these strings to verify they work after encoding
+    echo "Message: " . $secretMessage . "\n";
+    echo "Password: " . $password . "\n";
+    echo "API Key: " . $apiKey . "\n";
+    
+    // Also return a value to verify function execution works
+    return "Secrets processed successfully";
+}
+
+// Call the function
+$result = processSecrets();
+echo "Result: " . $result . "\n";
+
+// More complex string operations
+$concatenated = $secretMessage . " | " . $password;
+$substring = substr($apiKey, 8, 9) ; // Added missing semicolon here
+$uppercase = strtoupper($secretMessage);
+
+echo "Concatenated: " . $concatenated . "\n";
+echo "Substring: " . $substring . "\n";
+echo "Uppercase: " . $uppercase . "\n";
+
+echo "STRING ENCRYPTION TEST COMPLETED SUCCESSFULLY\n";
 ?>');
 
 // Execute the encoder with the --string-encryption option
@@ -88,8 +112,18 @@ echo "Processing file...\n";
 
 // Check if original strings are not present in the encoded file
 $encodedContent = file_get_contents($encodedFile);
-$stringsObfuscated = strpos($encodedContent, 'SuperSecretPassword123!') === false &&
-                     strpos($encodedContent, 'This is a secret message') === false;
+$sensitiveStrings = [
+    'SuperSecretPassword123!',
+    'This is a secret message that should be encrypted',
+    'api-key-12345-abcdefghijklmnopqrstuvwxyz'
+];
+
+$foundStrings = [];
+foreach ($sensitiveStrings as $string) {
+    if (strpos($encodedContent, $string) !== false) {
+        $foundStrings[] = $string;
+    }
+}
 
 // File was actually encoded (contains the signature)
 $isEncoded = strpos($encodedContent, 'ZYPH01') !== false;
@@ -100,8 +134,24 @@ $inDebugMode = strpos($output, 'base64 encoding for debugging') !== false;
 echo "\nResults:\n";
 echo "--------\n";
 echo "Encoded file created: " . ($isEncoded ? "YES" : "NO") . "\n";
-echo "Sensitive strings not found in encoded file: " . ($stringsObfuscated ? "YES" : "NO") . "\n";
+echo "DEBUG mode detected: " . ($inDebugMode ? "YES" : "NO") . "\n";
+
+if (count($foundStrings) > 0) {
+    echo "WARNING: Found " . count($foundStrings) . " sensitive strings in the encoded file:\n";
+    foreach ($foundStrings as $string) {
+        echo "  - " . substr($string, 0, 30) . (strlen($string) > 30 ? "..." : "") . "\n";
+    }
+} else {
+    echo "Sensitive strings not found in encoded file: YES\n";
+}
+
 echo "File size: " . filesize($encodedFile) . " bytes\n";
+
+// Now run the original file to get baseline output
+echo "\nRunning original test file...\n";
+echo "-------------------------\n";
+$origOutput = shell_exec("php $testFile 2>&1");
+echo rtrim($origOutput) . "\n";
 
 // Clean up
 @unlink($testFile);
@@ -132,7 +182,19 @@ Processing file...
 Results:
 --------
 Encoded file created: YES
+DEBUG mode detected: NO
 Sensitive strings not found in encoded file: YES
 File size: %d bytes
+
+Running original test file...
+-------------------------
+Message: This is a secret message that should be encrypted
+Password: SuperSecretPassword123!
+API Key: api-key-12345-abcdefghijklmnopqrstuvwxyz
+Result: Secrets processed successfully
+Concatenated: This is a secret message that should be encrypted | SuperSecretPassword123!
+Substring: 12345-abc
+Uppercase: THIS IS A SECRET MESSAGE THAT SHOULD BE ENCRYPTED
+STRING ENCRYPTION TEST COMPLETED SUCCESSFULLY
 
 Test completed successfully
