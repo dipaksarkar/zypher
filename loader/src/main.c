@@ -64,8 +64,48 @@ zend_module_entry zypher_module_entry = {
     PHP_ZYPHER_VERSION,    /* Version */
     STANDARD_MODULE_PROPERTIES};
 
-/* Compile module */
-ZEND_GET_MODULE(zypher)
+/* Add zend extension entry for loading as zend_extension */
+#ifndef ZEND_EXT_API
+#define ZEND_EXT_API ZEND_DLEXPORT
+#endif
+
+/* Zend extension function declarations need to be before they're used */
+static int zypher_startup(zend_extension *extension)
+{
+    return zend_startup_module(&zypher_module_entry);
+}
+
+static void zypher_shutdown(zend_extension *extension)
+{
+    /* Nothing to do here, the module shutdown handle will be called */
+}
+
+/* Register as a Zend extension */
+zend_extension_version_info extension_version_info = {
+    ZEND_EXTENSION_API_NO,
+    ZEND_EXTENSION_BUILD_ID
+};
+
+/* Define Zend extension entry */
+ZEND_DLEXPORT zend_extension zend_extension_entry = {
+    "Zypher PHP Loader",
+    PHP_ZYPHER_VERSION,
+    "Zypher Team",
+    "https://www.zypher.com/",
+    "Copyright (c) Zypher",
+    zypher_startup,        /* Startup */
+    zypher_shutdown,       /* Shutdown */
+    NULL,                  /* Activate */
+    NULL,                  /* Deactivate */
+    NULL,                  /* Message handler */
+    NULL,                  /* Op Array Handler */
+    NULL,                  /* Statement Handler */
+    NULL,                  /* Fcall Begin Handler */
+    NULL,                  /* Fcall End Handler */
+    NULL,                  /* Op Array Constructor */
+    NULL,                  /* Op Array Destructor */
+    STANDARD_ZEND_EXTENSION_PROPERTIES
+};
 
 /* Init globals */
 static void php_zypher_init_globals(zend_zypher_globals *globals)

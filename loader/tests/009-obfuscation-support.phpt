@@ -1,5 +1,5 @@
 --TEST--
-Zypher junk code insertion support
+Zypher obfuscation support
 --SKIPIF--
 <?php
 if (!file_exists(dirname(__DIR__) . '/modules/zypher.so')) {
@@ -16,12 +16,6 @@ if (!file_exists(dirname(__DIR__) . '/modules/zypher.so')) {
 $encoderPath = dirname(__DIR__) . '/../bin/zypher';
 if (!file_exists($encoderPath)) {
     die("Encoder not found at: $encoderPath\n");
-}
-
-// Extension path
-$extensionPath = dirname(__DIR__) . '/modules/zypher.so';
-if (!file_exists($extensionPath)) {
-    die("Zypher extension not found at: $extensionPath\n");
 }
 
 // Create temporary files for the test
@@ -48,8 +42,7 @@ echo "Test completed.\n";
 
 // Encode the file with junk-code option, explicitly using the extension
 $command = sprintf(
-    'php -d extension=%s "%s" "%s" "%s" --obfuscate --junk-code',
-    escapeshellarg($extensionPath),
+    'php "%s" "%s" "%s" --obfuscate --junk-code',
     $encoderPath,
     $testFile,
     $encodedFile
@@ -77,16 +70,16 @@ echo "--------------------\n";
 $originalOutput = shell_exec("php $testFile");
 echo $originalOutput . "\n";
 
-// Run the encoded file with the extension explicitly loaded
+// Run the encoded file without explicitly loading the extension (since it's already installed)
 echo "Running encoded file:\n";
 echo "-------------------\n";
-$runCommand = "php -d extension=" . escapeshellarg($extensionPath) . " $encodedFile 2>&1";
+$runCommand = "php $encodedFile 2>&1";
 $encodedOutput = shell_exec($runCommand);
 
 // Handle null output with a better check
 if ($encodedOutput === null) {
     echo "ERROR: Failed to execute encoded file, checking for errors...\n";
-    $checkCommand = "php -d extension=" . escapeshellarg($extensionPath) . " -l $encodedFile 2>&1";
+    $checkCommand = "php -l $encodedFile 2>&1";
     $checkResult = shell_exec($checkCommand);
     echo "PHP Lint result: " . $checkResult . "\n";
 

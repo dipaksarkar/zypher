@@ -134,7 +134,6 @@ $inDebugMode = strpos($output, 'base64 encoding for debugging') !== false;
 echo "\nResults:\n";
 echo "--------\n";
 echo "Encoded file created: " . ($isEncoded ? "YES" : "NO") . "\n";
-echo "DEBUG mode detected: " . ($inDebugMode ? "YES" : "NO") . "\n";
 
 if (count($foundStrings) > 0) {
     echo "WARNING: Found " . count($foundStrings) . " sensitive strings in the encoded file:\n";
@@ -182,7 +181,6 @@ Processing file...
 Results:
 --------
 Encoded file created: YES
-DEBUG mode detected: NO
 Sensitive strings not found in encoded file: YES
 File size: %d bytes
 

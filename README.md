@@ -104,10 +104,23 @@ make
 sudo make install
 ```
 
-Then add the following to your php.ini file:
+The installation process will:
 
+1. Install the extension binary (`zypher.so`) into your PHP extensions directory
+2. Automatically create `00-zypher.ini` configuration files:
+   - In your PHP CLI configuration directory 
+   - In your PHP-FPM configuration directory (if applicable)
+
+The configuration files will contain the following directive:
 ```ini
-extension=zypher.so
+zend_extension=/path/to/php/extensions/zypher.so
+```
+
+> **IMPORTANT**: Zypher must be loaded as a `zend_extension` rather than a regular `extension` for proper code decryption. This is similar to how IonCube and other code protection systems work.
+
+If you need to manually configure the extension, you can find the extensions path with:
+```bash
+php -i | grep extension_dir
 ```
 
 ## Testing
@@ -150,8 +163,8 @@ phpize
 make
 sudo make install
 
-# Enable the extension
-echo "extension=zypher.so" | sudo tee -a /path/to/your/php.ini
+# Enable the extension as a Zend extension
+echo "zend_extension=/path/to/php/extensions/zypher.so" | sudo tee -a /path/to/your/php.ini
 ```
 
 ## Security Recommendations
