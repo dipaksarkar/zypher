@@ -1,5 +1,7 @@
 <?php
 
+namespace Zypher;
+
 /**
  * ZypherEncoder class
  * 
@@ -7,10 +9,6 @@
  * 
  * @package Zypher
  */
-
-// Load required dependencies
-require_once __DIR__ . '/Constants.php';
-require_once __DIR__ . '/Obfuscator.php';
 
 /**
  * Main encoder class
@@ -114,10 +112,10 @@ class ZypherEncoder
             }
 
             // Get all files in the directory
-            $files = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator(
+            $files = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator(
                     $source,
-                    RecursiveDirectoryIterator::SKIP_DOTS
+                    \RecursiveDirectoryIterator::SKIP_DOTS
                 )
             );
 
@@ -270,7 +268,7 @@ class ZypherEncoder
         $content_iv = openssl_random_pseudo_bytes(16); // IV for content encryption
         $key_iv = openssl_random_pseudo_bytes(16);     // IV for key encryption
 
-        if (ZYPHER_DEBUG && !$this->options->quietMode) {
+        if (Constants::DEBUG && !$this->options->quietMode) {
             echo "DEBUG: Using AES-256-CBC encryption (Debug mode is ON, extra logging enabled)\n";
         }
 
@@ -390,7 +388,7 @@ class ZypherEncoder
         $encoded_content = base64_encode($rotated_content);
 
         // Add signature to identify this as a Zypher encoded file
-        $encoded_content = ZYPHER_SIGNATURE . $encoded_content;
+        $encoded_content = Constants::SIGNATURE . $encoded_content;
 
         // Create a PHP file with stub and encoded content
         $stub_content = <<<EOT
@@ -401,8 +399,8 @@ EOT;
 
         // Remove signature from encoded content as it will be added separately
         $encoded_data = $encoded_content;
-        if (strpos($encoded_data, ZYPHER_SIGNATURE) === 0) {
-            $encoded_data = substr($encoded_data, strlen(ZYPHER_SIGNATURE)); // Remove the signature
+        if (strpos($encoded_data, Constants::SIGNATURE) === 0) {
+            $encoded_data = substr($encoded_data, strlen(Constants::SIGNATURE)); // Remove the signature
         }
 
         // Create output directory if it doesn't exist
@@ -418,7 +416,7 @@ EOT;
         // 1. PHP stub at the beginning (valid PHP syntax)
         // 2. ZYPHER_SIGNATURE after the PHP closing tag
         // 3. Encoded data
-        if (file_put_contents($output_file, $stub_content . ZYPHER_SIGNATURE . $encoded_data) === false) {
+        if (file_put_contents($output_file, $stub_content . Constants::SIGNATURE . $encoded_data) === false) {
             echo "Error: Could not write to output file '$output_file'\n";
             return false;
         }

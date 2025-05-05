@@ -13,7 +13,7 @@ if (!file_exists(dirname(__DIR__) . '/modules/zypher.so')) {
  */
 
 // Path to encoder
-$encoderPath = dirname(__DIR__) . '/../encoder/encode.php';
+$encoderPath = dirname(__DIR__) . '/../bin/zypher';
 if (!file_exists($encoderPath)) {
     die("Encoder not found at: $encoderPath\n");
 }

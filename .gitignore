@@ -65,3 +65,5 @@ local_settings.php
 vendor/
 node_modules/
 tests/output
+
+composer.lock

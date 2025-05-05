@@ -1,5 +1,7 @@
 <?php
 
+namespace Zypher;
+
 /**
  * Obfuscator class
  * 

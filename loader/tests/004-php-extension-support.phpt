@@ -13,7 +13,7 @@ $test_file = __DIR__ . '/test_php_extension.php';
 file_put_contents($test_file, '<?php echo "Unique message: XYZ-123-ZYPHER"; ?>');
 
 // Path to the encoder 
-$encoder_path = dirname(dirname(__DIR__)) . '/encoder/encode.php';
+$encoder_path = dirname(dirname(__DIR__)) . '/bin/zypher';
 $encoded_file = __DIR__ . '/test_php_extension_encoded.php';
 
 // Encode the file - using quiet mode

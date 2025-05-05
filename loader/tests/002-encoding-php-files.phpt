@@ -13,7 +13,7 @@ $test_file = __DIR__ . '/test_script.php';
 file_put_contents($test_file, '<?php echo "Hello from test script"; ?>');
 
 // Path to the encoder 
-$encoder_path = dirname(dirname(__DIR__)) . '/encoder/encode.php';
+$encoder_path = dirname(dirname(__DIR__)) . '/bin/zypher';
 $encoded_file = __DIR__ . '/test_script_encoded.php';
 
 // Encode the file - using the quiet mode to suppress output

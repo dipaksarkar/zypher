@@ -42,7 +42,7 @@ echo "-------------\n";
 echo "Strings match: " . ($originalString === $decoded ? "YES" : "NO") . "\n";
 
 // Path to encoder
-$encoderPath = dirname(__DIR__) . '/../encoder/encode.php';
+$encoderPath = dirname(__DIR__) . '/../bin/zypher';
 if (!file_exists($encoderPath)) {
     die("Encoder not found at: $encoderPath\n");
 }

@@ -13,7 +13,7 @@ $test_file = __DIR__ . '/test_stub_script.php';
 file_put_contents($test_file, '<?php echo "This should not be executed if extension is not loaded"; ?>');
 
 // Path to the encoder 
-$encoder_path = dirname(dirname(__DIR__)) . '/encoder/encode.php';
+$encoder_path = dirname(dirname(__DIR__)) . '/bin/zypher';
 $encoded_file = __DIR__ . '/test_stub_script_encoded.php';
 
 // Encode the file - using quiet mode

@@ -1,135 +1,177 @@
-# Zypher - PHP Encryption and Licensing System
+# Zypher PHP Encoder
 
-## Overview
+Zypher is a comprehensive PHP source code protection system that encrypts PHP files using AES-256-CBC encryption. It consists of two main components:
 
-Zypher is a PHP source code encryption system that protects your PHP code with AES-256-CBC encryption and provides licensing functionality to control access to your software.
+1. **PHP Encoder**: A Composer-based PHP application that encrypts PHP source code
+2. **PHP Extension (Loader)**: A C-based extension that decrypts and executes protected PHP files at runtime
 
 ## Features
 
-- **AES-256-CBC Encryption**: Strong encryption to protect your PHP source code
-- **PHP Extension**: Fast C-based decryption at runtime
-- **Simple Implementation**: Easy to use and integrate with existing PHP projects
-- **Customizable**: Configure encryption keys and licensing parameters
-- **Standard PHP Extension**: Encoded files maintain the standard `.php` extension
-- **Code Obfuscation**: Optional code obfuscation features to further protect your code
-- **String Encryption**: Encrypt string literals within the code
-- **Junk Code Insertion**: Add meaningless code to confuse decompilers
-- **Directory Processing**: Recursively process entire directories maintaining the folder structure
-- **Exclude Patterns**: Skip files matching specified patterns during encoding
+- **Strong Encryption**: Uses AES-256-CBC with file-specific key derivation
+- **Code Obfuscation**: Multiple techniques including:
+  - Variable name obfuscation
+  - String encryption
+  - Junk code insertion
+  - Statement shuffling
+- **Flexible Options**: Configurable encryption strength and obfuscation levels
+- **Composer Integration**: Modern PHP project structure with PSR-4 autoloading
+- **Command-line Interface**: Easy-to-use CLI tool
+- **Cross-platform**: Works on Linux, macOS, and Windows
 
 ## Requirements
 
-- PHP 7.4+ (recommended PHP 8.0+)
-- OpenSSL support in PHP
-- Admin access to install PHP extensions
+- PHP 7.2 or higher
+- OpenSSL extension
+- Composer
 
 ## Installation
 
-### 1. Build and install the extension
+### Via Composer
 
 ```bash
-cd /path/to/zypher/loader
+composer require zypher/encoder
+```
+
+### Manual Installation
+
+```bash
+git clone https://github.com/zypher/encoder.git
+cd encoder
+composer install
+```
+
+## Usage
+
+### Basic Usage
+
+```bash
+./bin/zypher-encode /path/to/source.php /path/to/output.php
+```
+
+### Directory Encoding
+
+```bash
+./bin/zypher-encode /path/to/source/dir /path/to/output/dir
+```
+
+### With Custom Master Key
+
+```bash
+./bin/zypher-encode /path/to/source.php /path/to/output.php --master-key=your_secure_key
+```
+
+### With Obfuscation Options
+
+```bash
+./bin/zypher-encode /path/to/source.php /path/to/output.php --obfuscate --string-encryption --junk-code
+```
+
+### Exclude Files
+
+```bash
+./bin/zypher-encode /path/to/source/dir /path/to/output/dir --exclude=vendor/*,tests/*
+```
+
+### Quiet or Verbose Mode
+
+```bash
+./bin/zypher-encode /path/to/source.php /path/to/output.php --quiet
+./bin/zypher-encode /path/to/source.php /path/to/output.php --verbose
+```
+
+## Command-line Options
+
+| Option | Description |
+|--------|-------------|
+| `--master-key=KEY` | Set encryption master key (strongly recommended) |
+| `--obfuscate` | Enable code obfuscation |
+| `--string-encryption` | Enable string literal encryption |
+| `--junk-code` | Insert junk code to confuse reverse-engineering attempts |
+| `--shuffle-stmts` | Shuffle statement order where possible |
+| `--exclude=PATTERN` | Exclude files matching pattern (comma-separated) |
+| `--quiet` | Suppress non-error output |
+| `--verbose` | Show detailed encoding information |
+
+## Extension Installation
+
+To run encoded files, you need to install the Zypher Loader extension:
+
+```bash
+cd loader
 phpize
 ./configure
 make
 sudo make install
 ```
 
-### 2. Configure PHP to use the extension
-
-Add the following to your php.ini file:
+Then add the following to your php.ini file:
 
 ```ini
 extension=zypher.so
 ```
 
-## Usage
+## Testing
 
-### Encoding PHP files
+The project includes a comprehensive test suite covering various aspects of the Zypher encoder functionality.
 
-Basic usage:
+### Test Suites
 
-```bash
-php encoder/encode.php <source_path> [output_path] [options]
-```
+- **Stubs Tests**: Tests encoding with different options using stub PHP files
+- **Integration Tests**: Tests that validate end-to-end functionality with the PHP extension
+- **Error Handling Tests**: Tests for proper handling of edge cases and error conditions
 
-Available options:
+### Running Tests
 
-```
---master-key=<your_secret_key>   Use a custom encryption master key
---obfuscate                       Enable code obfuscation features
---string-encryption               Encrypt string literals in the code
---junk-code                       Insert junk code to confuse decompilers
---shuffle-stmts                   Shuffle code statements where possible
---exclude=pattern1,pattern2       Exclude files matching specified patterns
---quiet                           Suppress all output
---verbose                         Show detailed debug information
-```
-
-Examples:
+Run all tests:
 
 ```bash
-# Basic encoding with default options
-php encoder/encode.php your_script.php
-
-# Specify output file
-php encoder/encode.php your_script.php output.php
-
-# Custom master key
-php encoder/encode.php your_script.php --master-key=YourSecretKey123
-
-# Enable obfuscation with all features
-php encoder/encode.php your_script.php --obfuscate --string-encryption --junk-code
-
-# Process entire directory
-php encoder/encode.php /path/to/source/dir /path/to/output/dir
-
-# Process directory excluding test files
-php encoder/encode.php /path/to/source/dir --exclude=*.test.php,*_backup.php
-
-# Process directory with multiple options
-php encoder/encode.php /path/to/source/dir --exclude=vendor/*,tests/* --obfuscate
+vendor/bin/phpunit
 ```
 
-If you don't specify an output path:
-- For a file: the encoder will use the input filename with `_encoded.php` extension.
-- For a directory: the encoder will create a new directory with `_encoded` suffix.
+### Integration Tests
 
-### Running encoded files
+Integration tests verify that encoded files can be properly executed by the Zypher loader extension. These tests:
 
-Simply run the encoded file with PHP as you would any PHP script:
+1. Encode PHP files with various options
+2. Execute both the original and encoded versions
+3. Compare the results to ensure identical behavior
+
+Note: Integration tests are automatically skipped if the Zypher extension is not loaded in PHP.
+
+### Testing with the Extension
+
+To run integration tests, you need to have the Zypher extension installed and enabled:
 
 ```bash
-php your_script_encoded.php
+# Build and install the extension
+cd loader
+phpize
+./configure
+make
+sudo make install
+
+# Enable the extension
+echo "extension=zypher.so" | sudo tee -a /path/to/your/php.ini
 ```
 
-If the Zypher extension is not installed, users will see an error message prompting them to install it.
+## Security Recommendations
 
-## How It Works
+1. **Always use a custom master key** in production
+2. **Keep your master key secure** - never commit it to version control
+3. **Use all obfuscation options** for maximum security
+4. **Regularly update** both the encoder and loader components
 
-Encoded files are standard PHP files with a special structure:
-1. They begin with a PHP stub that displays an error message for users without the Zypher extension
-2. The ZYPH01 signature marks the file as Zypher-encoded
-3. The actual encoded content follows the signature
-4. When executed on a system with Zypher installed, the content is automatically decoded and executed
+## Project Structure
 
-## Security Considerations
-
-- Keep your encryption key secure and different from the default
-- Regularly update your encryption keys
-- Consider using different keys for different customers
-- Use the code obfuscation features for additional protection
-- Combine string encryption and junk code insertion for maximum security
-- Exclude sensitive configuration files that might contain credentials
-
-## Troubleshooting
-
-- **Bus Error/Segmentation Fault**: Check PHP compatibility and memory allocation
-- **Decoding Failed**: Ensure encryption keys match between encoding and decoding
-- **String Decoding Errors**: Make sure the extension has the correct string decoding function
-- **Missing Files**: When encoding directories, verify your exclude patterns aren't too broad
+- **bin/**: Command-line tools
+- **src/**: Source code for the encoder
+- **loader/**: PHP extension source code
+- **tests/**: Unit and integration tests
 
 ## License
 
-This software is proprietary and confidential.
-Copyright © 2025. All rights reserved.
+Proprietary - All rights reserved.
+
+## Support
+
+For questions and support, please open an issue on the GitHub repository or contact support@zypher.com.

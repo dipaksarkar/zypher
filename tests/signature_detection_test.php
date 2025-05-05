@@ -15,7 +15,7 @@
 
 // Path setup
 $basePath = dirname(__DIR__);
-$encoderPath = $basePath . '/encoder/encode.php';
+$encoderPath = $basePath . '/bin/zypher';
 $testDir = __DIR__;
 $testOutputDir = $testDir . '/output';
 

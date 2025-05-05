@@ -1,5 +1,7 @@
 <?php
 
+namespace Zypher;
+
 /**
  * EncoderOptions class
  * 
@@ -7,9 +9,6 @@
  * 
  * @package Zypher
  */
-
-// Load constants
-require_once __DIR__ . '/Constants.php';
 
 /**
  * Class to hold encoder options with proper defaults
@@ -19,7 +18,7 @@ class EncoderOptions
     /**
      * @var string Master key used for encryption
      */
-    public $masterKey = ZYPHER_DEFAULT_MASTER_KEY;
+    public $masterKey = Constants::DEFAULT_MASTER_KEY;
 
     /**
      * @var bool Whether to suppress output

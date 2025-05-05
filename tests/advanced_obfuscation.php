@@ -13,7 +13,7 @@
 $currentDir = __DIR__;
 $advancedPhpPath = $currentDir . '/advanced.php';
 $encodedFilePath = $currentDir . '/advanced_obfuscated.php';
-$encoderPath = dirname($currentDir) . '/encoder/encode.php';
+$encoderPath = dirname($currentDir) . '/bin/zypher';
 
 // Check for required files
 if (!file_exists($advancedPhpPath)) {
