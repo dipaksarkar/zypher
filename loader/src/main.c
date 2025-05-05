@@ -181,11 +181,27 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
         php_printf("DEBUG: File signature: %s (expected: %s)\n", signature, ZYPHER_SIGNATURE);
     }
 
+    /* Check if the file is encoded by looking for the signature anywhere in the first few KB */
     if (strcmp(signature, ZYPHER_SIGNATURE) == 0)
     {
         is_encoded = 1;
         if (DEBUG)
             php_printf("DEBUG: File is directly encoded with Zypher\n");
+    }
+    else
+    {
+        /* Look for signature within the first 1KB in case it follows PHP comments or whitespace */
+        size_t search_len = buffer_len > 1024 ? 1024 : buffer_len;
+        for (size_t i = 0; i <= search_len - SIGNATURE_LENGTH; i++)
+        {
+            if (memcmp(buffer + i, ZYPHER_SIGNATURE, SIGNATURE_LENGTH) == 0)
+            {
+                is_encoded = 1;
+                if (DEBUG)
+                    php_printf("DEBUG: Found Zypher signature at offset %zu\n", i);
+                break;
+            }
+        }
     }
 
     if (is_encoded)
@@ -193,6 +209,9 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
         /* Get the filename we should use for key derivation - just the base name like the encoder does */
         char *filename_dup = estrndup(filename, strlen(filename));
         char *base_name = basename(filename_dup);
+
+        if (DEBUG)
+            php_printf("DEBUG: Using base filename '%s' for decryption\n", base_name);
 
         /* Decrypt content using enhanced decryption */
         decoded = decrypt_file_content(buffer,
@@ -210,6 +229,9 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
                 php_printf("DEBUG: Decryption failed\n");
             return NULL;
         }
+
+        if (DEBUG)
+            php_printf("DEBUG: Successfully decrypted %zu bytes of content\n", decoded_len);
 
         /* Create a temporary file for the decoded content */
         char *tempname;

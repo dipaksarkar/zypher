@@ -10,6 +10,7 @@
  * - Verifying that stub code is properly added
  * - Testing loading and execution of encoded files
  * - Testing error handling when extension is not loaded
+ * - Testing obfuscation with advanced PHP features
  */
 
 echo "Zypher PHP Loader Tests\n";
@@ -150,6 +151,29 @@ if (strpos($encodedHelloOutput, "Zypher Loader") !== false) {
     echo "Advanced file comparison: " . (trim($advancedOutput) === trim($encodedAdvancedOutput) ? "MATCH" : "DIFFERENT") . "\n";
 }
 
+// Step 6: Test advanced obfuscation
+echo "\nStep 6: Testing advanced obfuscation\n";
+echo "-----------------------------\n";
+echo "Running advanced obfuscation test (test_advanced_obfuscation.php):\n";
+
+$advancedObfuscationTestPath = $testDir . '/test_advanced_obfuscation.php';
+if (file_exists($advancedObfuscationTestPath)) {
+    $obfuscationTestOutput = shell_exec("php $advancedObfuscationTestPath 2>&1");
+    
+    // Check if the test was successful
+    $obfuscationTestSuccess = strpos($obfuscationTestOutput, "SUCCESS: The obfuscated advanced PHP file executed correctly") !== false;
+    
+    echo "\nObfuscation test summary: " . ($obfuscationTestSuccess ? "SUCCESS" : "FAILED") . "\n";
+    
+    if (!$obfuscationTestSuccess) {
+        echo "Detailed test output:\n";
+        echo "-------------------\n";
+        echo $obfuscationTestOutput . "\n";
+    }
+} else {
+    echo "Error: Advanced obfuscation test file not found. Please create test_advanced_obfuscation.php first.\n";
+}
+
 // Final Report
 echo "\nTest Results Summary\n";
 echo "===================\n";
@@ -166,4 +190,5 @@ if (strpos($encodedHelloOutput, "Zypher Loader") !== false) {
     echo "3. Run this test script again to verify encoded files execute correctly\n";
 } else {
     echo "5. Encoded file execution: SUCCESS - The Zypher extension is installed and working correctly\n";
+    echo "6. Advanced obfuscation test: " . (isset($obfuscationTestSuccess) && $obfuscationTestSuccess ? "SUCCESS" : "FAILED") . "\n";
 }
