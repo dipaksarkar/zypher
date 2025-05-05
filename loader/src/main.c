@@ -97,6 +97,16 @@ PHP_MINIT_FUNCTION(zypher)
     /* Replace with our handler */
     zend_compile_file = zypher_compile_file;
 
+    /* Initialize debug mode based on INI setting */
+    ZYPHER_G(debug_mode) = INI_INT("zypher.debug_mode");
+
+    if (DEBUG)
+    {
+        php_printf("Zypher PHP Loader v%s initialized (Debug mode is %s)\n",
+                   PHP_ZYPHER_VERSION,
+                   ZYPHER_G(debug_mode) ? "ON" : "OFF");
+    }
+
     return SUCCESS;
 }
 

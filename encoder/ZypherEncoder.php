@@ -265,136 +265,132 @@ class ZypherEncoder
             }
         }
 
-        // Use a simpler encryption for debugging
-        if (ZYPHER_DEBUG) {
-            // For testing, use simple base64 instead of AES to ensure the extension works
-            $encoded_content = ZYPHER_SIGNATURE . base64_encode($source_content);
-            if (!$this->options->quietMode) {
-                echo "DEBUG: Using simple base64 encoding for debugging\n";
-            }
-        } else {
-            // Generate random IVs for both content and key encryption
-            $content_iv = openssl_random_pseudo_bytes(16); // IV for content encryption
-            $key_iv = openssl_random_pseudo_bytes(16);     // IV for key encryption
+        // Always use proper AES encryption, don't let debug mode change encryption method
+        // Generate random IVs for both content and key encryption
+        $content_iv = openssl_random_pseudo_bytes(16); // IV for content encryption
+        $key_iv = openssl_random_pseudo_bytes(16);     // IV for key encryption
 
-            if (!$this->options->quietMode || $this->options->verboseMode) {
-                echo "DEBUG: Content IV (hex): " . bin2hex($content_iv) . " (length: " . strlen($content_iv) . ")\n";
-                echo "DEBUG: Key IV (hex): " . bin2hex($key_iv) . " (length: " . strlen($key_iv) . ")\n";
-            }
-
-            // Using the base filename for key derivation is critical!
-            $base_filename = basename($source_file);
-
-            // Add a timing protection factor - use an expensive key derivation
-            $start_time = microtime(true);
-
-            // Derive a file-specific key from master key and filename
-            $derived_master_key = $this->deriveFileKey($this->options->masterKey, $base_filename, 1000); // Increased iterations
-
-            $end_time = microtime(true);
-            if ($this->options->verboseMode) {
-                echo "DEBUG: Key derivation took " . round(($end_time - $start_time) * 1000, 2) . " ms\n";
-            }
-
-            if (!$this->options->quietMode || $this->options->verboseMode) {
-                echo "DEBUG: Using base filename '$base_filename' for key derivation\n";
-                echo "DEBUG: Derived master key: $derived_master_key (length: " . strlen($derived_master_key) . ")\n";
-            }
-
-            // Add checksum for integrity checking - helps detect tampering
-            $checksum = md5($source_content);
-
-            // Integrity: Add timestamp to prevent replay attacks if that were a concern
-            $timestamp = time();
-            $timestamp_bytes = pack("N", $timestamp);
-
-            // Add version marker for future compatibility
-            $version = 1; // Version of the encoding format
-            $version_byte = chr($version);
-
-            // Encrypt the random file key with the derived master key
-            $encrypted_file_key = openssl_encrypt(
-                $random_file_key,
-                'AES-256-CBC',
-                $derived_master_key,
-                OPENSSL_RAW_DATA,
-                $key_iv
-            );
-
-            if ($encrypted_file_key === false) {
-                echo "Error: Key encryption failed: " . openssl_error_string() . "\n";
-                return false;
-            }
-
-            if ($this->options->verboseMode) {
-                echo "DEBUG: Random file key to encrypt: " . $random_file_key . "\n";
-                echo "DEBUG: Derived master key for encryption: " . $derived_master_key . "\n";
-                echo "DEBUG: Encrypted file key (hex): " . bin2hex($encrypted_file_key) . "\n";
-            }
-
-            // Now include checksum in the content to be encrypted
-            $content_to_encrypt = $checksum . $source_content;
-
-            // Encrypt the file content using the random file key
-            $encrypted_content = openssl_encrypt(
-                $content_to_encrypt,
-                'AES-256-CBC',
-                $random_file_key,
-                OPENSSL_RAW_DATA,
-                $content_iv
-            );
-
-            if ($encrypted_content === false) {
-                echo "Error: Content encryption failed: " . openssl_error_string() . "\n";
-                return false;
-            }
-
-            if (!$this->options->quietMode || $this->options->verboseMode) {
-                echo "DEBUG: Encrypted file key length: " . strlen($encrypted_file_key) . " bytes\n";
-                echo "DEBUG: Encrypted content size: " . strlen($encrypted_content) . " bytes\n";
-            }
-
-            // Enhanced Format:
-            // - 1 byte: version marker
-            // - 4 bytes: timestamp (for anti-replay)
-            // - 16 bytes: content IV
-            // - 16 bytes: key IV
-            // - 4 bytes: encrypted file key length (big endian)
-            // - N bytes: encrypted file key
-            // - 1 byte: original filename length
-            // - M bytes: original filename (for key derivation)
-            // - Remaining bytes: encrypted content
-            $key_length = strlen($encrypted_file_key);
-            $key_length_bytes = pack("N", $key_length); // 4 bytes unsigned long (big endian)
-
-            // Save original base filename for key derivation
-            $orig_filename = basename($source_file);
-            $filename_length = strlen($orig_filename);
-
-            if ($this->options->verboseMode) {
-                echo "DEBUG: Including original filename '$orig_filename' (length: $filename_length) for key derivation\n";
-                echo "DEBUG: Added version marker: $version\n";
-                echo "DEBUG: Added timestamp: $timestamp\n";
-                echo "DEBUG: Added content checksum: $checksum\n";
-            }
-
-            // Pack everything together with new format elements
-            $final_content = $version_byte . $timestamp_bytes . $content_iv . $key_iv .
-                $key_length_bytes . $encrypted_file_key .
-                chr($filename_length) . $orig_filename . $encrypted_content;
-
-            // Add an additional layer of obfuscation - rotate bytes
-            $rotated_content = '';
-            for ($i = 0; $i < strlen($final_content); $i++) {
-                $rotated_content .= chr((ord($final_content[$i]) + 7) & 0xFF);
-            }
-
-            // Base64 encode the entire package
-            $encoded_content = base64_encode($rotated_content);
-
-            // Add signature to identify this as a Zypher encoded file
-            $encoded_content = ZYPHER_SIGNATURE . $encoded_content;
+        if (ZYPHER_DEBUG && !$this->options->quietMode) {
+            echo "DEBUG: Using AES-256-CBC encryption (Debug mode is ON, extra logging enabled)\n";
         }
+
+        if (!$this->options->quietMode || $this->options->verboseMode) {
+            echo "DEBUG: Content IV (hex): " . bin2hex($content_iv) . " (length: " . strlen($content_iv) . ")\n";
+            echo "DEBUG: Key IV (hex): " . bin2hex($key_iv) . " (length: " . strlen($key_iv) . ")\n";
+        }
+
+        // Using the base filename for key derivation is critical!
+        $base_filename = basename($source_file);
+
+        // Add a timing protection factor - use an expensive key derivation
+        $start_time = microtime(true);
+
+        // Derive a file-specific key from master key and filename
+        $derived_master_key = $this->deriveFileKey($this->options->masterKey, $base_filename, 1000); // Increased iterations
+
+        $end_time = microtime(true);
+        if ($this->options->verboseMode) {
+            echo "DEBUG: Key derivation took " . round(($end_time - $start_time) * 1000, 2) . " ms\n";
+        }
+
+        if (!$this->options->quietMode || $this->options->verboseMode) {
+            echo "DEBUG: Using base filename '$base_filename' for key derivation\n";
+            echo "DEBUG: Derived master key: $derived_master_key (length: " . strlen($derived_master_key) . ")\n";
+        }
+
+        // Add checksum for integrity checking - helps detect tampering
+        $checksum = md5($source_content);
+
+        // Integrity: Add timestamp to prevent replay attacks if that were a concern
+        $timestamp = time();
+        $timestamp_bytes = pack("N", $timestamp);
+
+        // Add version marker for future compatibility
+        $version = 1; // Version of the encoding format
+        $version_byte = chr($version);
+
+        // Encrypt the random file key with the derived master key
+        $encrypted_file_key = openssl_encrypt(
+            $random_file_key,
+            'AES-256-CBC',
+            $derived_master_key,
+            OPENSSL_RAW_DATA,
+            $key_iv
+        );
+
+        if ($encrypted_file_key === false) {
+            echo "Error: Key encryption failed: " . openssl_error_string() . "\n";
+            return false;
+        }
+
+        if ($this->options->verboseMode) {
+            echo "DEBUG: Random file key to encrypt: " . $random_file_key . "\n";
+            echo "DEBUG: Derived master key for encryption: " . $derived_master_key . "\n";
+            echo "DEBUG: Encrypted file key (hex): " . bin2hex($encrypted_file_key) . "\n";
+        }
+
+        // Now include checksum in the content to be encrypted
+        $content_to_encrypt = $checksum . $source_content;
+
+        // Encrypt the file content using the random file key
+        $encrypted_content = openssl_encrypt(
+            $content_to_encrypt,
+            'AES-256-CBC',
+            $random_file_key,
+            OPENSSL_RAW_DATA,
+            $content_iv
+        );
+
+        if ($encrypted_content === false) {
+            echo "Error: Content encryption failed: " . openssl_error_string() . "\n";
+            return false;
+        }
+
+        if (!$this->options->quietMode || $this->options->verboseMode) {
+            echo "DEBUG: Encrypted file key length: " . strlen($encrypted_file_key) . " bytes\n";
+            echo "DEBUG: Encrypted content size: " . strlen($encrypted_content) . " bytes\n";
+        }
+
+        // Enhanced Format:
+        // - 1 byte: version marker
+        // - 4 bytes: timestamp (for anti-replay)
+        // - 16 bytes: content IV
+        // - 16 bytes: key IV
+        // - 4 bytes: encrypted file key length (big endian)
+        // - N bytes: encrypted file key
+        // - 1 byte: original filename length
+        // - M bytes: original filename (for key derivation)
+        // - Remaining bytes: encrypted content
+        $key_length = strlen($encrypted_file_key);
+        $key_length_bytes = pack("N", $key_length); // 4 bytes unsigned long (big endian)
+
+        // Save original base filename for key derivation
+        $orig_filename = basename($source_file);
+        $filename_length = strlen($orig_filename);
+
+        if ($this->options->verboseMode) {
+            echo "DEBUG: Including original filename '$orig_filename' (length: $filename_length) for key derivation\n";
+            echo "DEBUG: Added version marker: $version\n";
+            echo "DEBUG: Added timestamp: $timestamp\n";
+            echo "DEBUG: Added content checksum: $checksum\n";
+        }
+
+        // Pack everything together with new format elements
+        $final_content = $version_byte . $timestamp_bytes . $content_iv . $key_iv .
+            $key_length_bytes . $encrypted_file_key .
+            chr($filename_length) . $orig_filename . $encrypted_content;
+
+        // Add an additional layer of obfuscation - rotate bytes
+        $rotated_content = '';
+        for ($i = 0; $i < strlen($final_content); $i++) {
+            $rotated_content .= chr((ord($final_content[$i]) + 7) & 0xFF);
+        }
+
+        // Base64 encode the entire package
+        $encoded_content = base64_encode($rotated_content);
+
+        // Add signature to identify this as a Zypher encoded file
+        $encoded_content = ZYPHER_SIGNATURE . $encoded_content;
 
         // Create a PHP file with stub and encoded content
         $stub_content = <<<EOT
@@ -403,15 +399,10 @@ if(!extension_loaded('zypher')){die('The file '.__FILE__." is corrupted.\\n\\nSc
 ?>
 EOT;
 
-        // Prepare encoded data without the signature (will be embedded in the output)
-        if (ZYPHER_DEBUG) {
-            $encoded_data = base64_encode($source_content);
-        } else {
-            // In non-DEBUG mode, we need to remove the signature from encoded_content as it's added separately
-            $encoded_data = $encoded_content; // This variable already has the signature prepended
-            if (strpos($encoded_data, ZYPHER_SIGNATURE) === 0) {
-                $encoded_data = substr($encoded_data, strlen(ZYPHER_SIGNATURE)); // Remove the signature
-            }
+        // Remove signature from encoded content as it will be added separately
+        $encoded_data = $encoded_content;
+        if (strpos($encoded_data, ZYPHER_SIGNATURE) === 0) {
+            $encoded_data = substr($encoded_data, strlen(ZYPHER_SIGNATURE)); // Remove the signature
         }
 
         // Create output directory if it doesn't exist
@@ -436,18 +427,14 @@ EOT;
             echo "File encoded successfully!\n";
             echo "Source: $source_file\n";
             echo "Encoded file: $output_file\n";
-            if (!ZYPHER_DEBUG) {
-                echo "Encryption: AES-256-CBC with secure key derivation and two-layer encryption\n";
-                if ($this->options->obfuscation['enabled']) {
-                    echo "Applied obfuscation: ";
-                    $techniques = [];
-                    if ($this->options->obfuscation['string_encryption']) $techniques[] = "string encryption";
-                    if ($this->options->obfuscation['junk_code']) $techniques[] = "junk code insertion";
-                    if ($this->options->obfuscation['shuffle_statements']) $techniques[] = "statement shuffling";
-                    echo implode(", ", $techniques) . "\n";
-                }
-            } else {
-                echo "Encryption: Base64 (debug mode)\n";
+            echo "Encryption: AES-256-CBC with secure key derivation and two-layer encryption\n";
+            if ($this->options->obfuscation['enabled']) {
+                echo "Applied obfuscation: ";
+                $techniques = [];
+                if ($this->options->obfuscation['string_encryption']) $techniques[] = "string encryption";
+                if ($this->options->obfuscation['junk_code']) $techniques[] = "junk code insertion";
+                if ($this->options->obfuscation['shuffle_statements']) $techniques[] = "statement shuffling";
+                echo implode(", ", $techniques) . "\n";
             }
         }
 

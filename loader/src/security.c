@@ -23,16 +23,22 @@ int zypher_check_debugger(void)
 {
     if (!ZYPHER_G(debugger_protection))
     {
+        if (DEBUG)
+            php_printf("DEBUG: Debugger protection is disabled\n");
         return 0; // Protection disabled
     }
 
 #ifdef ZEND_DEBUG
+    if (DEBUG)
+        php_printf("DEBUG: Running in debug build\n");
     return 1; // Running in debug build
 #endif
 
     // Check for common debuggers
     if (zend_hash_str_exists(&module_registry, "xdebug", sizeof("xdebug") - 1))
     {
+        if (DEBUG)
+            php_printf("DEBUG: Xdebug module detected\n");
         return 1;
     }
 
@@ -44,9 +50,13 @@ int zypher_check_debugger(void)
     if (value && Z_TYPE_P(value) == IS_STRING &&
         Z_STRLEN_P(value) == 1 && Z_STRVAL_P(value)[0] == '1')
     {
+        if (DEBUG)
+            php_printf("DEBUG: PHP assertions are active\n");
         return 1;
     }
 
+    if (DEBUG)
+        php_printf("DEBUG: No debugger detected\n");
     return 0;
 }
 
@@ -56,6 +66,9 @@ int zypher_verify_license(const char *domain, time_t timestamp)
     // Check expiry if set
     if (ZYPHER_G(license_expiry) > 0 && time(NULL) > ZYPHER_G(license_expiry))
     {
+        if (DEBUG)
+            php_printf("DEBUG: License expired (current: %ld, expiry: %ld)\n",
+                       (long)time(NULL), (long)ZYPHER_G(license_expiry));
         return ZYPHER_ERR_EXPIRED;
     }
 
@@ -73,7 +86,6 @@ int zypher_verify_license(const char *domain, time_t timestamp)
             Z_TYPE_P(server_zval) == IS_ARRAY &&
             (server_name_zval = zend_hash_str_find(Z_ARRVAL_P(server_zval), "SERVER_NAME", sizeof("SERVER_NAME") - 1)) != NULL)
         {
-
             // Convert to string if needed
             zval tmp_zval;
             if (Z_TYPE_P(server_name_zval) != IS_STRING)
@@ -91,9 +103,19 @@ int zypher_verify_license(const char *domain, time_t timestamp)
             // Compare domain
             if (server_name && strcmp(server_name, ZYPHER_G(license_domain)) != 0)
             {
+                if (DEBUG)
+                    php_printf("DEBUG: Domain mismatch (current: %s, licensed: %s)\n",
+                               server_name, ZYPHER_G(license_domain));
                 // Domain mismatch
                 return ZYPHER_ERR_DOMAIN;
             }
+
+            if (DEBUG)
+                php_printf("DEBUG: Domain validation passed: %s\n", server_name);
+        }
+        else if (DEBUG)
+        {
+            php_printf("DEBUG: _SERVER or SERVER_NAME not available for domain verification\n");
         }
     }
 

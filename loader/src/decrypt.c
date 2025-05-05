@@ -177,25 +177,6 @@ char *decrypt_file_content(const char *encoded_content, size_t encoded_length,
         }
     }
 
-    /* Check if this is debug mode or production mode */
-    if (ZSTR_LEN(decoded_str) > 0 && ZSTR_VAL(decoded_str)[0] == '<')
-    {
-        /* This appears to be raw PHP code (debug mode) - no further decryption needed */
-        if (DEBUG)
-            php_printf("DEBUG: Detected debug mode encoding (direct base64)\n");
-
-        /* Return a copy of the decoded content */
-        decrypted = emalloc(ZSTR_LEN(decoded_str) + 1);
-        memcpy(decrypted, ZSTR_VAL(decoded_str), ZSTR_LEN(decoded_str));
-        decrypted[ZSTR_LEN(decoded_str)] = '\0';
-
-        if (out_length)
-            *out_length = ZSTR_LEN(decoded_str);
-
-        zend_string_release(decoded_str);
-        return decrypted;
-    }
-
     /* Parse the enhanced format */
     pos = 0;
     unsigned char *data = (unsigned char *)ZSTR_VAL(decoded_str);
