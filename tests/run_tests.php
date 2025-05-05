@@ -20,14 +20,15 @@ echo "======================\n\n";
 $basePath = dirname(__DIR__);
 $encoderPath = $basePath . '/encoder/encode.php';
 $testDir = __DIR__;
+$testOutputDir = $testDir . '/output';
 
 // Original test files
 $helloFile = $testDir . '/hello.php';
 $advancedFile = $testDir . '/advanced.php';
 
 // Encoded test files
-$helloFileEncoded = $testDir . '/hello_encoded.php';
-$advancedFileEncoded = $testDir . '/advanced_encoded.php';
+$helloFileEncoded = $testOutputDir . '/hello_encoded.php';
+$advancedFileEncoded = $testOutputDir . '/advanced_encoded.php';
 
 // Check if encoder exists
 if (!file_exists($encoderPath)) {
@@ -156,15 +157,15 @@ echo "\nStep 6: Testing advanced obfuscation\n";
 echo "-----------------------------\n";
 echo "Running advanced obfuscation test (test_advanced_obfuscation.php):\n";
 
-$advancedObfuscationTestPath = $testDir . '/test_advanced_obfuscation.php';
+$advancedObfuscationTestPath = $testDir . '/advanced_obfuscation.php';
 if (file_exists($advancedObfuscationTestPath)) {
     $obfuscationTestOutput = shell_exec("php $advancedObfuscationTestPath 2>&1");
-    
+
     // Check if the test was successful
     $obfuscationTestSuccess = strpos($obfuscationTestOutput, "SUCCESS: The obfuscated advanced PHP file executed correctly") !== false;
-    
+
     echo "\nObfuscation test summary: " . ($obfuscationTestSuccess ? "SUCCESS" : "FAILED") . "\n";
-    
+
     if (!$obfuscationTestSuccess) {
         echo "Detailed test output:\n";
         echo "-------------------\n";

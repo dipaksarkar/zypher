@@ -1,6 +1,0 @@
-<?php 
-if(!extension_loaded('zypher')){die('The file '.__FILE__." is corrupted.\n\nScript error: the ".((php_sapi_name()=='cli') ?'Zypher':'<a href=\"https://www.zypher.com\">Zypher</a>')." Loader for PHP needs to be installed.\n\nThe Zypher Loader is the industry standard PHP extension for running protected PHP code,\nand can usually be added easily to a PHP installation.\n\nFor Loaders please visit".((php_sapi_name()=='cli')?":\n\nhttps://get-loader.zypher.com\n\nFor":' <a href=\"https://get-loader.zypher.com\">get-loader.zypher.com</a> and for')." an instructional video please see".((php_sapi_name()=='cli')?":\n\nhttp://zypher.be/LV\n\n":' <a href=\"http://zypher.be/LV\">http://zypher.be/LV</a> ')."
-
-");}
-exit(199);
-?>ZYPH01PD9waHAKCi8qKgogKiBBIHNpbXBsZSB0ZXN0IGZpbGUgdG8gZGVtb25zdHJhdGUgWnlwaGVyIGVuY29kaW5nCiAqLwoKLy8gU2ltcGxlIGZ1bmN0aW9uIHRvIHRlc3QgZW5jb2RpbmcKZnVuY3Rpb24gc2F5SGVsbG8oJG5hbWUpCnsKICAgIGVjaG8gIkhlbGxvLCAkbmFtZSFcbiI7Cn0KCi8vIE91dHB1dCBhIG1lc3NhZ2UKZWNobyAiVGhpcyBpcyBhIHRlc3QgZmlsZSB0aGF0IHdpbGwgYmUgZW5jb2RlZCB3aXRoIFp5cGhlci5cbiI7CnNheUhlbGxvKCJXb3JsZCIpOwplY2hvICJDdXJyZW50IHRpbWU6ICIgLiBkYXRlKCdZLW0tZCBIOmk6cycpIC4gIlxuIjsK
