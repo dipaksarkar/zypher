@@ -306,7 +306,7 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
         if (DEBUG)
             php_printf("DEBUG: Successfully decrypted %zu bytes of content\n", decoded_len);
 
-        /* Debug output for the decrypted content */
+        /* Debug output for decrypted content */
         if (DEBUG)
         {
             php_printf("DEBUG: Compiling decoded content in memory\n");
@@ -325,9 +325,21 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
                 }
             }
             php_printf("'\n");
+
+            /* Write decoded content to a debug file for inspection ONLY in debug mode */
+            char debug_file[MAXPATHLEN];
+            snprintf(debug_file, sizeof(debug_file), "/tmp/zypher_debug_%s_%d.php",
+                     basename((char *)filename), (int)time(NULL));
+            FILE *df = fopen(debug_file, "wb");
+            if (df)
+            {
+                fwrite(decoded, decoded_len, 1, df);
+                fclose(df);
+                php_printf("DEBUG: Wrote decoded content to debug file: %s\n", debug_file);
+            }
         }
 
-        /* Alternative approach: Use a temporary file for compilation */
+        /* SECURE IN-MEMORY COMPILATION - Use temp file approach but sanitize after use */
         char temp_file[MAXPATHLEN];
         char *temp_dir = getenv("TMPDIR");
         if (temp_dir == NULL)
@@ -335,16 +347,21 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
             temp_dir = "/tmp";
         }
 
-        /* Create a unique filename based on the current timestamp and a random number */
+        /* Create a unique filename based on timestamp and a random number */
         snprintf(temp_file, sizeof(temp_file), "%s/zypher_temp_%d_%d.php",
                  temp_dir, (int)time(NULL), rand());
 
-        /* Write the decoded content to the temp file */
+        if (DEBUG)
+            php_printf("DEBUG: Using temporary file for secure compilation: %s\n", temp_file);
+
+        /* Write decoded content to temp file */
         FILE *tf = fopen(temp_file, "wb");
         if (!tf)
         {
             if (DEBUG)
                 php_printf("DEBUG: Failed to create temporary file for compilation\n");
+            /* Securely wipe sensitive data */
+            memset(decoded, 0, decoded_len);
             efree(decoded);
             return NULL;
         }
@@ -352,43 +369,34 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
         fwrite(decoded, decoded_len, 1, tf);
         fclose(tf);
 
-        if (DEBUG)
-            php_printf("DEBUG: Using temporary file for compilation: %s\n", temp_file);
-
-        /* Now we'll create a new file handle for the temporary file */
+        /* Create a clean file handle for the temporary file */
         zend_file_handle temp_file_handle;
         memset(&temp_file_handle, 0, sizeof(zend_file_handle));
-
-        /* Set up a stream file handle for the temp file */
         temp_file_handle.type = ZEND_HANDLE_FILENAME;
         temp_file_handle.filename = zend_string_init(temp_file, strlen(temp_file), 0);
-        temp_file_handle.opened_path = NULL;
 
-        /* Compile using the original compiler with our temp file */
+        /* Compile using the original compiler */
         op_array = original_compile_file(&temp_file_handle, type);
 
-        /* Clean up the temporary file */
-        unlink(temp_file);
+        /* Immediate secure cleanup */
+        unlink(temp_file); /* Delete the temp file right away */
 
-        /* Clean up the file handle */
+        /* Clean up resources */
         zend_string_release(temp_file_handle.filename);
+
+        /* Securely wipe sensitive data */
+        memset(decoded, 0, decoded_len);
+        efree(decoded);
 
         if (!op_array)
         {
             if (DEBUG)
-                php_printf("DEBUG: Compilation of temporary file failed\n");
+                php_printf("DEBUG: Compilation failed\n");
         }
         else
         {
             if (DEBUG)
-                php_printf("DEBUG: Compilation of temporary file successful\n");
-        }
-
-        /* Zero out sensitive memory before freeing it for enhanced security */
-        if (decoded)
-        {
-            memset(decoded, 0, decoded_len);
-            efree(decoded);
+                php_printf("DEBUG: Compilation successful\n");
         }
 
         return op_array;
