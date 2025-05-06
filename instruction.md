@@ -75,7 +75,7 @@ zypher/
    - Compile source → PHP **opcodes** using Zend API (`zend_compile_file`)
    - Serialize the opcodes (e.g. using `zend_compile_string()` then `zend_compile_file()` with output buffering)
    - Encrypt the serialized opcode array with AES-256
-   - Save output to `.php` file with a stub and encrypted block (e.g., `ZYPHER:BASE64...`)
+   - Save output to `.php` file with a stub and encrypted block (e.g., `ZYPH01BASE64...`)
 
 3. **Loading Process**:
    - Zend extension (`main.c`) hooks `zend_compile_file`
@@ -107,19 +107,23 @@ When `make` is run:
 
 ## 🔧 Loader (Zend Extension)
 - Implements `zend_compile_file` override
-- Checks for `ZYPHER:` marker
+- Checks for `ZYPH01` marker
 - Decrypts payload using embedded key
 - Restores opcode array
 - Executes directly via Zend
 
 ## 📦 Output File
-Example `.php` encoded file:
+Example `.php` encoded file in the correct order:
+
+1. PHP stub at the beginning (valid PHP syntax)
+2. ZYPHER_SIGNATURE after the PHP closing tag and a newline
+3. Encoded data
 
 ```php
 <?php
 if(!extension_loaded('zypher')){die('The file '.__FILE__." is corrupted.\\n\\nScript error: the ".((php_sapi_name()=='cli') ?'Zypher':'<a href=\\"https://www.zypher.com\\">Zypher</a>')." Loader for PHP needs to be installed.\\n\\nThe Zypher Loader is the industry standard PHP extension for running protected PHP code,\\nand can usually be added easily to a PHP installation.\\n\\nFor Loaders please visit".((php_sapi_name()=='cli')?":\\n\\nhttps://get-loader.zypher.com\\n\\nFor":' <a href=\\"https://get-loader.zypher.com\\">get-loader.zypher.com</a> and for')." an instructional video please see".((php_sapi_name()=='cli')?":\\n\\nhttp://zypher.be/LV\\n\\n":' <a href=\\"http://zypher.be/LV\\">http://zypher.be/LV</a> ')."");}exit(0);
 ?>
-ZYPHER:BASE64_ENCRYPTED_OPCODE_BLOCK
+ZYPH01{Encoded_Data}
 ````
 
 ---

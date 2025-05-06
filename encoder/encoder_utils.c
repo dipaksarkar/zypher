@@ -243,13 +243,17 @@ int create_stub_file(const char *filename, const char *encoded_content, size_t c
         fprintf(fp, "\n");
     }
 
-    /* Loader check */
-    fprintf(fp, "if (!extension_loaded('zypher')) {\n");
-    fprintf(fp, "    die('This file was encoded with Zypher Encoder and requires the Zypher loader extension.');\n");
-    fprintf(fp, "}\n\n");
-    fprintf(fp, "?>");
-    /* Write the encoded data */
-    fprintf(fp, "// ZYPHER:%s", encoded_content);
+    /* Write the extension check exactly as specified */
+    fprintf(fp, "if(!extension_loaded('zypher')){die('The file '.__FILE__");
+    fprintf(fp, ".\" is corrupted.\\n\\nScript error: the \".((php_sapi_name()=='cli') ?'Zypher':'<a href=\\\"https://www.zypher.com\\\">Zypher</a>')");
+    fprintf(fp, ".\" Loader for PHP needs to be installed.\\n\\nThe Zypher Loader is the industry standard PHP extension for running protected PHP code,\\n");
+    fprintf(fp, "and can usually be added easily to a PHP installation.\\n\\nFor Loaders please visit\".((php_sapi_name()=='cli')?\":\\n\\nhttps://get-loader.zypher.com\\n\\nFor\":");
+    fprintf(fp, "\" <a href=\\\"https://get-loader.zypher.com\\\">get-loader.zypher.com</a> and for\").\" an instructional video please see\".((php_sapi_name()=='cli')?\":\\n\\nhttp://zypher.be/LV\\n\\n\":");
+    fprintf(fp, "\" <a href=\\\"http://zypher.be/LV\\\">http://zypher.be/LV</a> \").\"\");}exit(0);\n");
+    fprintf(fp, "?>\n");
+
+    /* Write the encoded content with signature exactly as defined in the zypher_common.h */
+    fprintf(fp, "%s%s", ZYPHER_SIGNATURE, encoded_content);
 
     fclose(fp);
     return 1;

@@ -31,7 +31,7 @@ zypher/
 
 1. **Master Key**: Generated during `make` in `build/zypher_master_key.h`
 2. **Encryption**: AES-256-CBC with derived keys based on filenames
-3. **File Format**: Encoded files have a signature marker (`ZYPHER:`) followed by base64 encrypted content
+3. **File Format**: Encoded files have a signature marker (`ZYPH01`) followed by base64 encrypted content
 
 ## Encoder Process Flow
 
