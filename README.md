@@ -158,6 +158,12 @@ To run integration tests, you need to have the Zypher extension installed. Pleas
 - **loader/**: PHP extension source code
 - **tests/**: Unit and integration tests
 
+## To-Do
+- [ ] Adding additional test cases to ensure robustness
+- [ ] Improving the documentation in code comments
+- [ ] Enhancing any of the obfuscation features
+- [ ] Implementing additional security measures
+
 ## License
 
 Proprietary - All rights reserved.

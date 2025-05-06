@@ -174,9 +174,6 @@ abstract class AbstractStubTest extends TestCase
 
         // Step 1: Execute the original stub file and get its output/return value
         $originalResults = $this->executePhpFile($stubPath);
-        echo "\nOriginal file output: $stubPath\n";
-        echo "---------------------\n";
-        echo json_encode($originalResults); // Debugging output
 
         // Check if we can perform loader-based testing
         if (!$this->isLoaderAvailable()) {
@@ -189,10 +186,6 @@ abstract class AbstractStubTest extends TestCase
             $encodedResults = $this->executePhpFile($encodedPath);
 
             // Step 3: Compare the results to ensure they match
-            echo "\nComparing results: $encodedPath\n";
-            echo "---------------------\n";
-            echo json_encode($encodedResults); // Debugging output
-
             // Compare return codes
             $this->assertEquals(
                 $originalResults['returnCode'],
