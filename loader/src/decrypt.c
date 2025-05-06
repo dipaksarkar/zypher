@@ -113,25 +113,62 @@ char *decrypt_file_content(const char *encoded_content, size_t encoded_length,
     uint32_t timestamp = 0;
     int has_byte_rotation = 0;
     char extracted_checksum[33] = {0};
+    const char *signature_pos = NULL;
+    unsigned long openssl_err = 0;
 
     /* Debug output */
     if (DEBUG)
     {
         php_printf("DEBUG: Decrypting content of length %zu\n", encoded_length);
+        /* Display the master key for debugging */
+        php_printf("DEBUG: Using master key: '%s'\n", master_key);
+        php_printf("DEBUG: Using filename for decryption: '%s'\n", filename);
     }
 
-    /* Check for Zypher signature */
-    if (encoded_length < SIGNATURE_LENGTH || strncmp(encoded_content, ZYPHER_SIGNATURE, SIGNATURE_LENGTH) != 0)
+    /* Find Zypher signature anywhere in the file, not just at the beginning */
+    signature_pos = strstr(encoded_content, ZYPHER_SIGNATURE);
+    if (!signature_pos || (size_t)(signature_pos - encoded_content) >= encoded_length - SIGNATURE_LENGTH)
     {
         if (DEBUG)
-            php_printf("DEBUG: Invalid signature\n");
+            php_printf("DEBUG: Signature not found in the content\n");
         return NULL;
+    }
+
+    if (DEBUG)
+    {
+        php_printf("DEBUG: Found signature at offset %zu\n", (size_t)(signature_pos - encoded_content));
+
+        /* Show some context around the signature for debugging */
+        php_printf("DEBUG: Content around signature: '");
+        size_t start = (size_t)(signature_pos - encoded_content);
+        if (start > 10)
+            start -= 10;
+        else
+            start = 0;
+
+        size_t end = start + SIGNATURE_LENGTH + 20;
+        if (end > encoded_length)
+            end = encoded_length;
+
+        for (size_t i = start; i < end; i++)
+        {
+            unsigned char c = encoded_content[i];
+            if (c >= 32 && c <= 126)
+            {
+                php_printf("%c", c);
+            }
+            else
+            {
+                php_printf("\\x%02x", c);
+            }
+        }
+        php_printf("'\n");
     }
 
     /* Base64 decode the content after signature */
     decoded_str = php_base64_decode(
-        (const unsigned char *)encoded_content + SIGNATURE_LENGTH,
-        encoded_length - SIGNATURE_LENGTH);
+        (const unsigned char *)signature_pos + SIGNATURE_LENGTH,
+        encoded_length - ((size_t)(signature_pos - encoded_content) + SIGNATURE_LENGTH));
 
     if (!decoded_str)
     {
@@ -143,6 +180,12 @@ char *decrypt_file_content(const char *encoded_content, size_t encoded_length,
     if (DEBUG)
     {
         php_printf("DEBUG: Base64 decoded length: %zu bytes\n", ZSTR_LEN(decoded_str));
+        php_printf("DEBUG: First few bytes (hex): ");
+        for (size_t i = 0; i < (ZSTR_LEN(decoded_str) > 32 ? 32 : ZSTR_LEN(decoded_str)); i++)
+        {
+            php_printf("%02x ", (unsigned char)ZSTR_VAL(decoded_str)[i]);
+        }
+        php_printf("\n");
     }
 
     /* Handle byte rotation if present (enhanced format) */
@@ -152,20 +195,22 @@ char *decrypt_file_content(const char *encoded_content, size_t encoded_length,
     if (ZSTR_LEN(decoded_str) > 0)
     {
         /* Simple heuristic: check if first byte is likely version byte (1) rotated by +7 */
-        if ((unsigned char)ZSTR_VAL(decoded_str)[0] == (1 + 7) % 256)
+        if ((unsigned char)ZSTR_VAL(decoded_str)[0] == (1 + BYTE_ROTATION_OFFSET) % 256)
         {
             has_byte_rotation = 1;
 
             if (DEBUG)
             {
-                php_printf("DEBUG: Detected byte rotation encoding\n");
+                php_printf("DEBUG: Detected byte rotation encoding (first byte: %d)\n",
+                           (unsigned char)ZSTR_VAL(decoded_str)[0]);
+                php_printf("DEBUG: Using rotation offset: %d\n", BYTE_ROTATION_OFFSET);
             }
 
             /* Un-rotate bytes (reverse +7 rotation) */
             rotated_content = emalloc(ZSTR_LEN(decoded_str) + 1);
             for (size_t i = 0; i < ZSTR_LEN(decoded_str); i++)
             {
-                rotated_content[i] = (char)((unsigned char)(ZSTR_VAL(decoded_str)[i] - 7) & 0xFF);
+                rotated_content[i] = (char)((unsigned char)(ZSTR_VAL(decoded_str)[i] - BYTE_ROTATION_OFFSET) & 0xFF);
             }
             rotated_content[ZSTR_LEN(decoded_str)] = '\0';
 
@@ -174,6 +219,25 @@ char *decrypt_file_content(const char *encoded_content, size_t encoded_length,
             decoded_str = zend_string_init(rotated_content, ZSTR_LEN(old_str), 0);
             zend_string_release(old_str);
             efree(rotated_content);
+
+            if (DEBUG)
+            {
+                php_printf("DEBUG: After byte rotation, first few bytes (hex): ");
+                for (size_t i = 0; i < (ZSTR_LEN(decoded_str) > 32 ? 32 : ZSTR_LEN(decoded_str)); i++)
+                {
+                    php_printf("%02x ", (unsigned char)ZSTR_VAL(decoded_str)[i]);
+                }
+                php_printf("\n");
+            }
+        }
+        else
+        {
+            if (DEBUG)
+            {
+                php_printf("DEBUG: No byte rotation detected (first byte: %d, expected: %d)\n",
+                           (unsigned char)ZSTR_VAL(decoded_str)[0], (1 + BYTE_ROTATION_OFFSET) % 256);
+                php_printf("DEBUG: This might indicate a format mismatch\n");
+            }
         }
     }
 
@@ -196,7 +260,7 @@ char *decrypt_file_content(const char *encoded_content, size_t encoded_length,
 
     if (DEBUG)
     {
-        php_printf("DEBUG: Format version: %d\n", format_version);
+        php_printf("DEBUG: Format version: %d (expected: %d)\n", format_version, ZYPHER_FORMAT_VERSION);
     }
 
     /* Verify expected format version */
@@ -372,7 +436,7 @@ char *decrypt_file_content(const char *encoded_content, size_t encoded_length,
         return NULL;
     }
 
-    /* Derive master key from filename */
+    /* Derive master key from original filename */
     char derived_key[65];
 
     /* Use original filename for key derivation, not the current one */
@@ -432,8 +496,51 @@ char *decrypt_file_content(const char *encoded_content, size_t encoded_length,
     /* Finalize decryption */
     if (EVP_DecryptFinal_ex(ctx, (unsigned char *)decrypted_file_key + outlen, &tmplen) != 1)
     {
+        openssl_err = ERR_get_error();
+        char err_msg[256] = {0};
+        ERR_error_string_n(openssl_err, err_msg, sizeof(err_msg));
+
         if (DEBUG)
-            php_printf("DEBUG: Failed to finalize key decryption\n");
+        {
+            php_printf("DEBUG: Failed to finalize key decryption: %s (error code: 0x%lx)\n",
+                       err_msg, openssl_err);
+
+            /* Check for specific OpenSSL errors */
+            if (openssl_err == 0x0606506D)
+            { // EVP_R_BAD_DECRYPT
+                php_printf("DEBUG: Bad decrypt - likely wrong key or corrupted data\n");
+
+                /* Dump the key and IV for debugging */
+                php_printf("DEBUG: Key used for decryption (hex): ");
+                for (int i = 0; i < 32; i++)
+                {
+                    php_printf("%02x", (unsigned char)derived_key[i]);
+                }
+                php_printf("\n");
+
+                php_printf("DEBUG: Key IV (hex): ");
+                for (int i = 0; i < IV_LENGTH; i++)
+                {
+                    php_printf("%02x", key_iv[i]);
+                }
+                php_printf("\n");
+
+                php_printf("DEBUG: Encrypted file key (hex): ");
+                for (size_t i = 0; i < (key_length > 32 ? 32 : key_length); i++)
+                {
+                    php_printf("%02x", (unsigned char)encrypted_file_key[i]);
+                }
+                if (key_length > 32)
+                {
+                    php_printf("...");
+                }
+                php_printf("\n");
+            }
+            else if (openssl_err == 0x06065064)
+            { // EVP_R_WRONG_FINAL_BLOCK_LENGTH
+                php_printf("DEBUG: Wrong final block length - padding error\n");
+            }
+        }
         EVP_CIPHER_CTX_free(ctx);
         efree(encrypted_file_key);
         efree(orig_filename);
@@ -488,8 +595,22 @@ char *decrypt_file_content(const char *encoded_content, size_t encoded_length,
     /* Finalize decryption */
     if (EVP_DecryptFinal_ex(ctx, (unsigned char *)decrypted + outlen, &tmplen) != 1)
     {
+        openssl_err = ERR_get_error();
         if (DEBUG)
-            php_printf("DEBUG: Failed to finalize content decryption\n");
+        {
+            php_printf("DEBUG: Failed to finalize content decryption: %s (error code: %lu)\n",
+                       ERR_error_string(openssl_err, NULL), openssl_err);
+
+            /* Check for specific OpenSSL errors */
+            if (openssl_err == 0x0606506D)
+            { // EVP_R_BAD_DECRYPT
+                php_printf("DEBUG: Bad decrypt - likely wrong key or corrupted data\n");
+            }
+            else if (openssl_err == 0x06065064)
+            { // EVP_R_WRONG_FINAL_BLOCK_LENGTH
+                php_printf("DEBUG: Wrong final block length - padding error\n");
+            }
+        }
         EVP_CIPHER_CTX_free(ctx);
         efree(encrypted_file_key);
         efree(orig_filename);

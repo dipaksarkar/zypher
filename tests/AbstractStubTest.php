@@ -74,7 +74,8 @@ abstract class AbstractStubTest extends TestCase
     {
         $this->assertFileExists($filePath, "File not found: $filePath");
 
-        // Prepare the PHP command
+        // Prepare command to execute the PHP file
+        // Use -d display_errors=1 to ensure errors are displayed
         $command = 'php -d display_errors=1 ' . escapeshellarg($filePath) . ' 2>&1';
 
         // Execute the command and capture output
@@ -102,7 +103,10 @@ abstract class AbstractStubTest extends TestCase
      */
     protected function isLoaderAvailable(): bool
     {
-        return extension_loaded('zypher');
+        // Check if the extension is available in the system
+        // This runs a simple command to check if the extension is loaded
+        $result = shell_exec("php -r 'echo extension_loaded(\"zypher\") ? \"yes\" : \"no\";'");
+        return trim($result) === "yes";
     }
 
     /**
@@ -170,6 +174,9 @@ abstract class AbstractStubTest extends TestCase
 
         // Step 1: Execute the original stub file and get its output/return value
         $originalResults = $this->executePhpFile($stubPath);
+        echo "\nOriginal file output: $stubPath\n";
+        echo "---------------------\n";
+        echo json_encode($originalResults); // Debugging output
 
         // Check if we can perform loader-based testing
         if (!$this->isLoaderAvailable()) {
@@ -182,6 +189,9 @@ abstract class AbstractStubTest extends TestCase
             $encodedResults = $this->executePhpFile($encodedPath);
 
             // Step 3: Compare the results to ensure they match
+            echo "\nComparing results: $encodedPath\n";
+            echo "---------------------\n";
+            echo json_encode($encodedResults); // Debugging output
 
             // Compare return codes
             $this->assertEquals(
@@ -193,6 +203,12 @@ abstract class AbstractStubTest extends TestCase
             // Normalize outputs (remove timestamps, system-specific paths, etc)
             $originalOutput = $this->normalizeOutput($originalResults['output']);
             $encodedOutput = $this->normalizeOutput($encodedResults['output']);
+
+            // Debug mode: write outputs to files for inspection if they differ
+            if ($originalOutput !== $encodedOutput) {
+                file_put_contents(self::OUTPUT_DIR . '/debug_original_output.txt', $originalOutput);
+                file_put_contents(self::OUTPUT_DIR . '/debug_encoded_output.txt', $encodedOutput);
+            }
 
             // Compare outputs
             $this->assertEquals(

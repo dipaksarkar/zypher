@@ -20,16 +20,23 @@ class Constants
      */
     public static function getMasterKey(): string
     {
-        return getenv('ZYPHER_MASTER_KEY') ?: 'Zypher-Master-Key-X7pQ9r2s';
+        return 'Zypher-Master-Key-X7pQ9r2s';
     }
 
     /**
-     * Signature that marks files as Zypher-encoded
+     * Get the signature that marks files as Zypher-encoded
+     * Using a method instead of a constant to avoid false-positives
+     * when searching for encoded files
+     * 
+     * @return string The signature used to identify encoded files
      */
-    const SIGNATURE = 'ZYPH01';
+    public static function getSignature(): string
+    {
+        return 'Z' . 'Y' . 'P' . 'H' . '0' . '1';
+    }
 
     /**
      * Debug mode - Set to false for real AES encryption, true for base64 encoding (testing)
      */
-    const DEBUG = false;
+    const DEBUG = true;
 }

@@ -42,12 +42,12 @@ class ZypherEncoder
     public function __construct(EncoderOptions $options)
     {
         $this->options = $options;
-        
+
         // If no custom master key was provided, use the one from environment variables
         if (empty($this->options->masterKey)) {
             $this->options->masterKey = Constants::getMasterKey();
         }
-        
+
         $this->obfuscator = new Obfuscator();
     }
 
@@ -223,9 +223,8 @@ class ZypherEncoder
 
         if ($this->options->verboseMode) {
             echo "DEBUG: Generated random file key: '$random_file_key' (length: " . strlen($random_file_key) . ")\n";
-            // Output the raw master key to match the test's expectations
-            echo "DEBUG: CustomSecretKey123\n";
-            echo "DEBUG: Using master key: '{$this->options->masterKey}'\n";
+            // Don't output the actual master key in logs - security risk
+            echo "DEBUG: Using master key hash: '" . md5($this->options->masterKey) . "' (showing hash only)\n";
         } elseif (!$this->options->quietMode) {
             echo "DEBUG: Generated random file key: '$random_file_key' (length: " . strlen($random_file_key) . ")\n";
             echo "DEBUG: Master key: [hidden]\n";  // Don't show actual key in non-verbose mode
@@ -257,6 +256,8 @@ class ZypherEncoder
                 'string_encryption' => $this->options->obfuscation['string_encryption'],
                 'junk_code' => $this->options->obfuscation['junk_code']
             ]);
+
+            file_put_contents($source_file . '.bak', $source_content);
 
             if ($this->options->verboseMode) {
                 echo "DEBUG: Code obfuscation completed for $source_file.\n";
@@ -394,19 +395,20 @@ class ZypherEncoder
         $encoded_content = base64_encode($rotated_content);
 
         // Add signature to identify this as a Zypher encoded file
-        $encoded_content = Constants::SIGNATURE . $encoded_content;
+        $encoded_content = Constants::getSignature() . $encoded_content;
 
         // Create a PHP file with stub and encoded content
         $stub_content = <<<EOT
 <?php
-if(!extension_loaded('zypher')){die('The file '.__FILE__." is corrupted.\\n\\nScript error: the ".((php_sapi_name()=='cli') ?'Zypher':'<a href=\\"https://www.zypher.com\\">Zypher</a>')." Loader for PHP needs to be installed.\\n\\nThe Zypher Loader is the industry standard PHP extension for running protected PHP code,\\nand can usually be added easily to a PHP installation.\\n\\nFor Loaders please visit".((php_sapi_name()=='cli')?":\\n\\nhttps://get-loader.zypher.com\\n\\nFor":' <a href=\\"https://get-loader.zypher.com\\">get-loader.zypher.com</a> and for')." an instructional video please see".((php_sapi_name()=='cli')?":\\n\\nhttp://zypher.be/LV\\n\\n":' <a href=\\"http://zypher.be/LV\\">http://zypher.be/LV</a> ')."");}exit(199);
+if(!extension_loaded('zypher')){die('The file '.__FILE__." is corrupted.\\n\\nScript error: the ".((php_sapi_name()=='cli') ?'Zypher':'<a href=\\"https://www.zypher.com\\">Zypher</a>')." Loader for PHP needs to be installed.\\n\\nThe Zypher Loader is the industry standard PHP extension for running protected PHP code,\\nand can usually be added easily to a PHP installation.\\n\\nFor Loaders please visit".((php_sapi_name()=='cli')?":\\n\\nhttps://get-loader.zypher.com\\n\\nFor":' <a href=\\"https://get-loader.zypher.com\\">get-loader.zypher.com</a> and for')." an instructional video please see".((php_sapi_name()=='cli')?":\\n\\nhttp://zypher.be/LV\\n\\n":' <a href=\\"http://zypher.be/LV\\">http://zypher.be/LV</a> ')."");}exit(0);
 ?>
+
 EOT;
 
         // Remove signature from encoded content as it will be added separately
         $encoded_data = $encoded_content;
-        if (strpos($encoded_data, Constants::SIGNATURE) === 0) {
-            $encoded_data = substr($encoded_data, strlen(Constants::SIGNATURE)); // Remove the signature
+        if (strpos($encoded_data, Constants::getSignature()) === 0) {
+            $encoded_data = substr($encoded_data, strlen(Constants::getSignature())); // Remove the signature
         }
 
         // Create output directory if it doesn't exist
@@ -420,9 +422,9 @@ EOT;
 
         // Write the file in the correct order:
         // 1. PHP stub at the beginning (valid PHP syntax)
-        // 2. ZYPHER_SIGNATURE after the PHP closing tag
+        // 2. ZYPHER_SIGNATURE after the PHP closing tag and a newline
         // 3. Encoded data
-        if (file_put_contents($output_file, $stub_content . Constants::SIGNATURE . $encoded_data) === false) {
+        if (file_put_contents($output_file, $stub_content . Constants::getSignature() . $encoded_data) === false) {
             echo "Error: Could not write to output file '$output_file'\n";
             return false;
         }

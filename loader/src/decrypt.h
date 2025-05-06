@@ -13,6 +13,10 @@
 #include "php.h"
 #include "src/php_loader.h"
 
+/* Define constants for decryption */
+#define IV_LENGTH 16
+#define ZYPHER_FORMAT_VERSION 1
+
 /* Read and decrypt file content */
 char *decrypt_file_content(const char *encoded_content, size_t encoded_length,
                            const char *master_key, const char *filename, size_t *out_length);

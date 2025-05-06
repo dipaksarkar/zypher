@@ -52,6 +52,7 @@ class Obfuscator
         $tokens = token_get_all($code);
         $obfuscatedCode = '';
         $phpOpenTagAdded = false;
+        $inPhp = false; // To track if we're inside PHP code section
 
         // Variables to track scope and names
         $variables = [];
@@ -125,24 +126,33 @@ class Obfuscator
             }
         }
 
+        // Make sure we strip any existing PHP open tags from the input code
+        // to avoid duplication when we add our own
+        $hasPhpOpenTag = false;
+        $codeWithoutOpenTag = $code;
+
+        if (strpos(trim($code), '<?php') === 0) {
+            // Strip the PHP open tag
+            $codeWithoutOpenTag = substr($code, 5);
+            $hasPhpOpenTag = true;
+        }
+
         // Apply PHP tag handling for string encryption if needed
         if ($options['string_encryption']) {
             $obfuscatedCode = "<?php\n";
             $phpOpenTagAdded = true;
 
-            // Check if zypher_decode_string exists
-            $obfuscatedCode .= "if (!function_exists('zypher_decode_string')) {\n";
-            $obfuscatedCode .= "    trigger_error('Zypher extension missing or outdated - string decoding function not available', E_USER_ERROR);\n";
+            // Check if zypher_decode_string exists - using double quotes to avoid escaping issues
+            $obfuscatedCode .= "if (!function_exists(\"zypher_decode_string\")) {\n";
+            $obfuscatedCode .= "    trigger_error(\"Zypher extension missing or outdated - string decoding function not available\", E_USER_ERROR);\n";
             $obfuscatedCode .= "}\n\n";
 
-            // If there's a PHP opening tag in the original code, remove it to avoid duplication
-            if (strpos($code, '<?php') === 0) {
-                $code = substr($code, 5);
-            }
-        } else if (strpos($code, '<?php') === 0) {
+            // Use the code without the PHP open tag to avoid duplication
+            $code = $codeWithoutOpenTag;
+        } else if ($hasPhpOpenTag) {
             $obfuscatedCode = "<?php";
             $phpOpenTagAdded = true;
-            $code = substr($code, 5);
+            $code = $codeWithoutOpenTag;
         }
 
         // Second pass: Replace variable names with obfuscated versions
@@ -151,6 +161,11 @@ class Obfuscator
         $braceLevel = 0;
         $inFunction = false;
         $inClass = false;
+
+        // Re-tokenize the code without PHP open tag if it was removed
+        if ($hasPhpOpenTag) {
+            $tokens = token_get_all($code);
+        }
 
         for ($i = 0; $i < count($tokens); $i++) {
             $token = $tokens[$i];
@@ -183,7 +198,12 @@ class Obfuscator
                     $currentScope = "class:" . $className;
                     $obfuscatedCode .= $tokenValue;
                 }
-                // Handle PHP open tags if not already added
+                // Skip PHP open tags entirely since we've already added our own
+                else if ($tokenType === T_OPEN_TAG && $phpOpenTagAdded) {
+                    // Skip this token - we already added the PHP open tag
+                    continue;
+                }
+                // Add PHP open tag if not already added
                 else if ($tokenType === T_OPEN_TAG && !$phpOpenTagAdded) {
                     $obfuscatedCode .= $tokenValue;
                     $phpOpenTagAdded = true;
@@ -252,26 +272,54 @@ class Obfuscator
 
         // Add junk code if option enabled
         if ($options['junk_code']) {
-            // Create a unique junk code instance
+            // Create a unique junk code instance for the beginning of the file
             $junk = $this->generateJunkCode();
 
             // Make sure we have a PHP tag at the beginning
             if (!$phpOpenTagAdded) {
                 $obfuscatedCode = "<?php\n" . $junk . "\n" . $obfuscatedCode;
             } else {
-                // Find the position after PHP tag
+                // Find the position after PHP tag, and skip whitespace
                 $pos = strpos($obfuscatedCode, "<?php") + 5;
-                // Insert junk after PHP tag
-                $obfuscatedCode = substr($obfuscatedCode, 0, $pos) . "\n" . $junk . "\n" . substr($obfuscatedCode, $pos);
+
+                // For safety, add the junk code in a separate line after the PHP opening tag
+                // and before any actual code
+                $obfuscatedCode = substr($obfuscatedCode, 0, $pos) . "\n" . $junk . substr($obfuscatedCode, $pos);
             }
 
-            // Insert junk at various positions but avoid inserting in the middle of code structures
-            $codeLines = explode("\n", $obfuscatedCode);
+            // For safety, we'll only add additional junk code at the global scope
+            // to avoid affecting class or function behavior
+            $lines = explode("\n", $obfuscatedCode);
             $resultLines = [];
-            foreach ($codeLines as $i => $line) {
+            $braceLevel = 0;
+            $inPhpCode = false;
+
+            foreach ($lines as $i => $line) {
                 $resultLines[] = $line;
-                // Add junk every 10 lines, but only if the line ends with a semicolon or brace
-                if ($i > 0 && $i % 10 === 0 && (substr(trim($line), -1) === ';' || substr(trim($line), -1) === '}')) {
+
+                // Count braces to track scope
+                $trimmedLine = trim($line);
+                if (strpos($trimmedLine, '<?php') !== false) {
+                    $inPhpCode = true;
+                }
+
+                // Only proceed if we're in PHP code
+                if (!$inPhpCode) {
+                    continue;
+                }
+
+                // Count opening and closing braces to track nesting level
+                $braceLevel += substr_count($trimmedLine, '{');
+                $braceLevel -= substr_count($trimmedLine, '}');
+
+                // Only insert junk at global scope (braceLevel = 0) and only after specific lines
+                // that are more likely to be safe insertion points
+                if (
+                    $i > 0 && $i % 10 === 0 && $braceLevel === 0 &&
+                    (substr($trimmedLine, -1) === ';' || substr($trimmedLine, -1) === '}') &&
+                    strpos($trimmedLine, 'namespace') === false &&
+                    strpos($trimmedLine, 'use ') === false
+                ) {
                     $resultLines[] = $this->generateJunkCode();
                 }
             }
@@ -300,8 +348,12 @@ class Obfuscator
         // Convert to hex representation
         $hex = bin2hex($result);
 
+        // Ensure quotes are properly escaped to prevent syntax errors
+        $escaped_hex = addslashes($hex);
+        $escaped_key = addslashes(md5($key));
+
         // Use the native extension function to decode string at runtime
-        return 'zypher_decode_string("' . $hex . '", "' . md5($key) . '")';
+        return 'zypher_decode_string("' . $escaped_hex . '", "' . $escaped_key . '")';
     }
 
     /**
@@ -311,11 +363,16 @@ class Obfuscator
      */
     public function generateJunkCode()
     {
+        // Create an array of junk code snippets that won't affect program output
+        // - Wrapped in if(false) to ensure they never execute
+        // - No output functions (echo, print, etc.)
+        // - No function declarations outside if(false) blocks
+        // - No eval() or other potentially dangerous functions
         $junkFunctions = [
-            'if(false){$_x=array();foreach($_x as $k=>$v){echo $k;}}',
-            '$_t=microtime();if(false&&$_t){eval("return false;");}',
-            'function _z' . mt_rand() . '(){return false;} /* junk function */',
-            '$_a=array();$_a[]=1;$_a[]=2;if(count($_a)>999){$_a=array_reverse($_a);}',
+            'if(false){$_zx=array();foreach($_zx as $_zk=>$_zv){$_zx[$_zk]=$_zv;}}',
+            'if(false){$_zt=microtime();if($_zt){$_zt+=1;}}',
+            'if(false){function _zf' . mt_rand(1000, 9999) . '(){return null;}}',
+            'if(false){$_za=array();$_za[]=mt_rand(0,1);if(count($_za)>999){$_za=array();}}',
         ];
 
         return $junkFunctions[array_rand($junkFunctions)];

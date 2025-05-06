@@ -17,6 +17,10 @@
 #include <openssl/err.h>
 #include <libgen.h> /* For basename() function */
 
+/* Enable debug mode for troubleshooting */
+#undef DEBUG
+#define DEBUG 1
+
 /* Store original compile file function */
 zend_op_array *(*original_compile_file)(zend_file_handle *file_handle, int type);
 
@@ -83,8 +87,7 @@ static void zypher_shutdown(zend_extension *extension)
 /* Register as a Zend extension */
 zend_extension_version_info extension_version_info = {
     ZEND_EXTENSION_API_NO,
-    ZEND_EXTENSION_BUILD_ID
-};
+    ZEND_EXTENSION_BUILD_ID};
 
 /* Define Zend extension entry */
 ZEND_DLEXPORT zend_extension zend_extension_entry = {
@@ -93,19 +96,18 @@ ZEND_DLEXPORT zend_extension zend_extension_entry = {
     "Zypher Team",
     "https://www.zypher.com/",
     "Copyright (c) Zypher",
-    zypher_startup,        /* Startup */
-    zypher_shutdown,       /* Shutdown */
-    NULL,                  /* Activate */
-    NULL,                  /* Deactivate */
-    NULL,                  /* Message handler */
-    NULL,                  /* Op Array Handler */
-    NULL,                  /* Statement Handler */
-    NULL,                  /* Fcall Begin Handler */
-    NULL,                  /* Fcall End Handler */
-    NULL,                  /* Op Array Constructor */
-    NULL,                  /* Op Array Destructor */
-    STANDARD_ZEND_EXTENSION_PROPERTIES
-};
+    zypher_startup,  /* Startup */
+    zypher_shutdown, /* Shutdown */
+    NULL,            /* Activate */
+    NULL,            /* Deactivate */
+    NULL,            /* Message handler */
+    NULL,            /* Op Array Handler */
+    NULL,            /* Statement Handler */
+    NULL,            /* Fcall Begin Handler */
+    NULL,            /* Fcall End Handler */
+    NULL,            /* Op Array Constructor */
+    NULL,            /* Op Array Destructor */
+    STANDARD_ZEND_EXTENSION_PROPERTIES};
 
 /* Init globals */
 static void php_zypher_init_globals(zend_zypher_globals *globals)
@@ -228,7 +230,7 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
 
     if (DEBUG)
     {
-        php_printf("DEBUG: File signature: %s (expected: %s)\n", signature, ZYPHER_SIGNATURE);
+        php_printf("DEBUG: File signature: %.10s... (expected: %s)\n", buffer, ZYPHER_SIGNATURE);
     }
 
     /* Check if the file is encoded by looking for the signature anywhere in the first few KB */
@@ -248,7 +250,39 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
             {
                 is_encoded = 1;
                 if (DEBUG)
+                {
                     php_printf("DEBUG: Found Zypher signature at offset %zu\n", i);
+
+                    /* Add debug output to show characters around the signature */
+                    php_printf("DEBUG: Signature context: '");
+                    for (int j = -10; j < SIGNATURE_LENGTH + 10; j++)
+                    {
+                        if (i + j >= 0 && i + j < buffer_len)
+                        {
+                            unsigned char c = buffer[i + j];
+                            /* Print visible characters as is, others as hex */
+                            if (c >= 32 && c <= 126)
+                            {
+                                php_printf("%c", c);
+                            }
+                            else
+                            {
+                                php_printf("\\x%02x", c);
+                            }
+                        }
+                    }
+                    php_printf("'\n");
+
+                    /* Check if there's a newline before the signature */
+                    if (i > 0)
+                    {
+                        php_printf("DEBUG: Character before signature: \\x%02x\n", buffer[i - 1]);
+                        if (buffer[i - 1] == '\n')
+                        {
+                            php_printf("DEBUG: Found newline before signature\n");
+                        }
+                    }
+                }
                 break;
             }
         }
@@ -361,6 +395,33 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
         if (DEBUG)
         {
             php_printf("DEBUG: Compiling decoded content\n");
+            php_printf("DEBUG: Compilation of decoded content starting...\n");
+            php_printf("DEBUG: First 100 chars of decoded content: '");
+            size_t preview_len = decoded_len > 100 ? 100 : decoded_len;
+            for (size_t i = 0; i < preview_len; i++)
+            {
+                unsigned char c = decoded[i];
+                if (c >= 32 && c <= 126 && c != '\\')
+                {
+                    php_printf("%c", c);
+                }
+                else
+                {
+                    php_printf("\\x%02x", c);
+                }
+            }
+            php_printf("'\n");
+
+            // Write the decoded content to a debug file for inspection
+            char debug_file[MAXPATHLEN];
+            snprintf(debug_file, sizeof(debug_file), "/tmp/zypher_debug_%d.php", (int)time(NULL));
+            FILE *df = fopen(debug_file, "wb");
+            if (df)
+            {
+                fwrite(decoded, decoded_len, 1, df);
+                fclose(df);
+                php_printf("DEBUG: Wrote decoded content to debug file: %s\n", debug_file);
+            }
         }
 
         /* Compile the decoded content */

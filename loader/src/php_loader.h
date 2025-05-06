@@ -28,8 +28,8 @@ ZEND_END_MODULE_GLOBALS(zypher)
 
 /* Define a master key constant (used to decrypt per-file keys) */
 #define ZYPHER_MASTER_KEY "Zypher-Master-Key-X7pQ9r2s"
-#define ZYPHER_SIGNATURE "<?php /* Zypher Encoded File */ "
-#define SIGNATURE_LENGTH 32
+#define ZYPHER_SIGNATURE "ZYPH01"
+#define SIGNATURE_LENGTH 6
 #define IV_LENGTH 16
 #define KEY_LENGTH 32
 #define MAX_KEY_ITERATIONS 5000

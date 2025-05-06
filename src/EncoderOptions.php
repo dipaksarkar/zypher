@@ -2,6 +2,8 @@
 
 namespace Zypher;
 
+use Zypher\Constants;
+
 /**
  * EncoderOptions class
  * 
@@ -18,7 +20,7 @@ class EncoderOptions
     /**
      * @var string Master key used for encryption
      */
-    public $masterKey = '';
+    public $masterKey = 'Zypher-Master-Key-X7pQ9r2s';
 
     /**
      * @var bool Whether to suppress output
@@ -54,7 +56,7 @@ class EncoderOptions
     {
         // Set default master key
         $this->masterKey = Constants::getMasterKey();
-        
+
         // Start from the third argument (after script name and source path)
         for ($i = 2; $i < count($args); $i++) {
             if (substr($args[$i], 0, 12) === '--master-key=') {

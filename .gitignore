@@ -69,3 +69,4 @@ tests/output
 composer.lock
 phpunit.xml
 .phpunit.cache
+*_encoded.php

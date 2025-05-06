@@ -12,8 +12,8 @@ AWK = awk
 ZYPHER_SHARED_LIBADD = -Wl,-rpath,/usr/local/lib -L/usr/local/lib -lcrypto -Wl,-rpath,/usr/local/lib -L/usr/local/lib -lssl
 shared_objects_zypher = src/main.lo src/decrypt.lo src/security.lo src/utils.lo
 PHP_PECL_EXTENSION = zypher
-PHP_MODULES = 
-PHP_ZEND_EX = $(phplibdir)/zypher.la
+PHP_MODULES = $(phplibdir)/zypher.la
+PHP_ZEND_EX =
 all_targets = $(PHP_MODULES) $(PHP_ZEND_EX)
 install_targets = install-modules install-headers
 prefix = /usr/local/Cellar/php@8.3/8.3.19_1
@@ -86,44 +86,9 @@ install-binaries: build-binaries $(install_binary_targets)
 install-modules: build-modules
 	@test -d modules && \
 	$(mkinstalldirs) $(INSTALL_ROOT)$(EXTENSION_DIR)
-	@echo "Installing Zypher Loader as Zend extension:     $(INSTALL_ROOT)$(EXTENSION_DIR)/"
+	@echo "Installing shared extensions:     $(INSTALL_ROOT)$(EXTENSION_DIR)/"
 	@rm -f modules/*.la >/dev/null 2>&1
 	@$(INSTALL) modules/* $(INSTALL_ROOT)$(EXTENSION_DIR)
-	@echo "Creating extension configuration files..."
-	@php_ini_dir=`$(PHP_EXECUTABLE) -i | grep "Scan this dir for additional .ini files" | awk -F'=>' '{print $$2}' | tr -d ' '`; \
-	if test -n "$$php_ini_dir"; then \
-		$(mkinstalldirs) $$php_ini_dir; \
-		echo "zend_extension=$(EXTENSION_DIR)/zypher.so" > $$php_ini_dir/00-zypher.ini; \
-		echo "Created $$php_ini_dir/00-zypher.ini"; \
-	fi; \
-	php_fpm_conf_dir=`$(PHP_EXECUTABLE) -i | grep "additional .ini files" | grep "fpm" | awk -F'=>' '{print $$2}' | tr -d ' '`; \
-	if test -z "$$php_fpm_conf_dir"; then \
-		php_fpm_conf_dir="/etc/php-fpm.d"; \
-		if test ! -d "$$php_fpm_conf_dir"; then \
-			php_fpm_conf_dir="/etc/php/fpm/conf.d"; \
-			if test ! -d "$$php_fpm_conf_dir"; then \
-				php_fpm_conf_dir="/etc/php-fpm/conf.d"; \
-			fi; \
-		fi; \
-	fi; \
-	if test -d "$$php_fpm_conf_dir"; then \
-		$(mkinstalldirs) $$php_fpm_conf_dir; \
-		echo "zend_extension=$(EXTENSION_DIR)/zypher.so" > $$php_fpm_conf_dir/00-zypher.ini; \
-		echo "Created $$php_fpm_conf_dir/00-zypher.ini"; \
-	fi
-	@echo ""
-	@echo "-----------------------------------------------------------"
-	@echo "Zypher Loader successfully installed as a Zend extension."
-	@echo ""
-	@echo "Configuration files have been created:"
-	@echo "- 00-zypher.ini in PHP CLI configuration directory"
-	@echo "- 00-zypher.ini in PHP-FPM configuration directory (if applicable)"
-	@echo ""
-	@echo "NOTE: The extension is now loaded as a zend_extension:"
-	@echo "      zend_extension=$(EXTENSION_DIR)/zypher.so"
-	@echo ""
-	@echo "This is different from regular extensions which use 'extension='"
-	@echo "-----------------------------------------------------------"
 
 install-headers:
 	-@if test "$(INSTALL_HEADERS)"; then \
@@ -162,21 +127,30 @@ PHP_TEST_SHARED_EXTENSIONS =  ` \
 	fi; \
 	if test "x$(PHP_ZEND_EX)" != "x"; then \
 		for i in $(PHP_ZEND_EX)""; do \
-			. $$i; \
-			$(top_srcdir)/build/shtool echo -n -- " -d zend_extension=$(top_builddir)/modules/$$dlname"; \
+			. $$i; $(top_srcdir)/build/shtool echo -n -- " -d zend_extension=$(top_builddir)/modules/$$dlname"; \
 		done; \
 	fi`
-
 PHP_DEPRECATED_DIRECTIVES_REGEX = '^(magic_quotes_(gpc|runtime|sybase)?|(zend_)?extension(_debug)?(_ts)?)[\t\ ]*='
 
 test: all
 	@if test ! -z "$(PHP_EXECUTABLE)" && test -x "$(PHP_EXECUTABLE)"; then \
-		echo "Running tests with installed Zypher extension"; \
+		INI_FILE=`$(PHP_EXECUTABLE) -d 'display_errors=stderr' -r 'echo php_ini_loaded_file();' 2> /dev/null`; \
+		if test "$$INI_FILE"; then \
+			$(EGREP) -h -v $(PHP_DEPRECATED_DIRECTIVES_REGEX) "$$INI_FILE" > $(top_builddir)/tmp-php.ini; \
+		else \
+			echo > $(top_builddir)/tmp-php.ini; \
+		fi; \
+		INI_SCANNED_PATH=`$(PHP_EXECUTABLE) -d 'display_errors=stderr' -r '$$a = explode(",\n", trim(php_ini_scanned_files())); echo $$a[0];' 2> /dev/null`; \
+		if test "$$INI_SCANNED_PATH"; then \
+			INI_SCANNED_PATH=`$(top_srcdir)/build/shtool path -d $$INI_SCANNED_PATH`; \
+			$(EGREP) -h -v $(PHP_DEPRECATED_DIRECTIVES_REGEX) "$$INI_SCANNED_PATH"/*.ini >> $(top_builddir)/tmp-php.ini; \
+		fi; \
 		TEST_PHP_EXECUTABLE=$(PHP_EXECUTABLE) \
 		TEST_PHP_SRCDIR=$(top_srcdir) \
 		CC="$(CC)" \
-			$(PHP_EXECUTABLE) $(PHP_TEST_SETTINGS) $(top_srcdir)/run-tests.php $(TESTS); \
+			$(PHP_EXECUTABLE) -n -c $(top_builddir)/tmp-php.ini $(PHP_TEST_SETTINGS) $(top_srcdir)/run-tests.php -n -c $(top_builddir)/tmp-php.ini -d extension_dir=$(top_builddir)/modules/ $(PHP_TEST_SHARED_EXTENSIONS) $(TESTS); \
 		TEST_RESULT_EXIT_CODE=$$?; \
+		rm $(top_builddir)/tmp-php.ini; \
 		exit $$TEST_RESULT_EXIT_CODE; \
 	else \
 		echo "ERROR: Cannot run tests without CLI sapi."; \

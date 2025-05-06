@@ -22,6 +22,11 @@ $encoderPath = $basePath . '/bin/zypher';
 $testDir = __DIR__;
 $testOutputDir = $testDir . '/output';
 
+// Create output directory if it doesn't exist
+if (!is_dir($testOutputDir)) {
+    mkdir($testOutputDir, 0777, true);
+}
+
 // Original test files
 $helloFile = $testDir . '/hello.php';
 $advancedFile = $testDir . '/advanced.php';
@@ -29,6 +34,7 @@ $advancedFile = $testDir . '/advanced.php';
 // Encoded test files
 $helloFileEncoded = $testOutputDir . '/hello_encoded.php';
 $advancedFileEncoded = $testOutputDir . '/advanced_encoded.php';
+$advancedObfuscationEncoded = $testOutputDir . '/advanced_obfuscate_encoded.php';
 
 // Check if encoder exists
 if (!file_exists($encoderPath)) {
@@ -102,6 +108,7 @@ echo "-----------------------------\n";
 
 $encodeHelloCommand = "php $encoderPath $helloFile $helloFileEncoded";
 $encodeAdvancedCommand = "php $encoderPath $advancedFile $advancedFileEncoded";
+$encodeAdvancedObfuscateCommand = "php $encoderPath $advancedFile $advancedObfuscationEncoded --obfuscate";
 
 echo "Encoding hello.php... ";
 $encodeHelloResult = shell_exec($encodeHelloCommand);
@@ -110,6 +117,10 @@ echo file_exists($helloFileEncoded) ? "SUCCESS\n" : "FAILED\n";
 echo "Encoding advanced.php... ";
 $encodeAdvancedResult = shell_exec($encodeAdvancedCommand);
 echo file_exists($advancedFileEncoded) ? "SUCCESS\n" : "FAILED\n";
+
+echo "Encoding advanced.php --obfuscate ... ";
+$encodeObfuscateResult = shell_exec($encodeAdvancedObfuscateCommand);
+echo file_exists($advancedObfuscationEncoded) ? "SUCCESS\n" : "FAILED\n";
 
 // Step 3: Examine the encoded files to verify stub and structure
 echo "\nStep 3: Examining encoded files\n";
@@ -161,7 +172,7 @@ echo "\nStep 6: Testing advanced obfuscation\n";
 echo "-----------------------------\n";
 echo "Running advanced obfuscation test (test_advanced_obfuscation.php):\n";
 
-$advancedObfuscationTestPath = $testDir . '/advanced_obfuscation.php';
+$advancedObfuscationTestPath = $advancedObfuscationEncoded;
 if (file_exists($advancedObfuscationTestPath)) {
     $obfuscationTestOutput = shell_exec("php $advancedObfuscationTestPath 2>&1");
 

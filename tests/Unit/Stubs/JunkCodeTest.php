@@ -18,7 +18,6 @@ class JunkCodeTest extends AbstractStubTest
     {
         return [
             'obfuscate' => true,
-            'junk_code' => true
         ];
     }
 
