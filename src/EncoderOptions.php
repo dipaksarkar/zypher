@@ -23,12 +23,7 @@ class EncoderOptions
     public $masterKey = 'Zypher-Master-Key-X7pQ9r2s';
 
     /**
-     * @var bool Whether to suppress output
-     */
-    public $quietMode = false;
-
-    /**
-     * @var bool Whether to show verbose output
+     * @var bool Whether to show verbose output and debug information
      */
     public $verboseMode = false;
 
@@ -64,8 +59,6 @@ class EncoderOptions
             } elseif (substr($args[$i], 0, 10) === '--exclude=') {
                 $patterns = substr($args[$i], 10);
                 $this->excludePatterns = explode(',', $patterns);
-            } elseif ($args[$i] === '--quiet') {
-                $this->quietMode = true;
             } elseif ($args[$i] === '--verbose') {
                 $this->verboseMode = true;
             } elseif ($args[$i] === '--obfuscate') {

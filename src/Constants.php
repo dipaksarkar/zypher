@@ -34,9 +34,4 @@ class Constants
     {
         return 'Z' . 'Y' . 'P' . 'H' . '0' . '1';
     }
-
-    /**
-     * Debug mode - Set to false for real AES encryption, true for base64 encoding (testing)
-     */
-    const DEBUG = true;
 }

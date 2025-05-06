@@ -141,7 +141,7 @@ class ZypherEncoder
 
                 // Check if file should be excluded
                 if ($this->shouldExcludeFile($filepath, $this->options->excludePatterns)) {
-                    if (!$this->options->quietMode) {
+                    if ($this->options->verboseMode) {
                         echo "Skipping excluded file: $filepath\n";
                     }
                     $this->stats['skipped']++;
@@ -174,12 +174,12 @@ class ZypherEncoder
         } else {
             // Source is a file, process directly
             if (pathinfo($source, PATHINFO_EXTENSION) !== 'php') {
-                if (!$this->options->quietMode) {
+                if ($this->options->verboseMode) {
                     echo "Skipping non-PHP file: $source\n";
                 }
                 $this->stats['skipped']++;
             } else if ($this->shouldExcludeFile($source, $this->options->excludePatterns)) {
-                if (!$this->options->quietMode) {
+                if ($this->options->verboseMode) {
                     echo "Skipping excluded file: $source\n";
                 }
                 $this->stats['skipped']++;
@@ -225,9 +225,6 @@ class ZypherEncoder
             echo "DEBUG: Generated random file key: '$random_file_key' (length: " . strlen($random_file_key) . ")\n";
             // Don't output the actual master key in logs - security risk
             echo "DEBUG: Using master key hash: '" . md5($this->options->masterKey) . "' (showing hash only)\n";
-        } elseif (!$this->options->quietMode) {
-            echo "DEBUG: Generated random file key: '$random_file_key' (length: " . strlen($random_file_key) . ")\n";
-            echo "DEBUG: Master key: [hidden]\n";  // Don't show actual key in non-verbose mode
         }
 
         // Read the source file
@@ -239,16 +236,14 @@ class ZypherEncoder
 
         // Apply code obfuscation if enabled
         if ($this->options->obfuscation['enabled']) {
-            if (!$this->options->quietMode) {
-                echo "Applying code obfuscation techniques to $source_file...\n";
-            }
+            echo "Applying code obfuscation techniques to $source_file...\n";
 
             // Apply specific obfuscation techniques with appropriate messaging
-            if ($this->options->obfuscation['string_encryption'] && !$this->options->quietMode) {
+            if ($this->options->obfuscation['string_encryption'] && $this->options->verboseMode) {
                 echo "Applying string encryption to protect string literals...\n";
             }
 
-            if ($this->options->obfuscation['junk_code'] && !$this->options->quietMode) {
+            if ($this->options->obfuscation['junk_code'] && $this->options->verboseMode) {
                 echo "Adding junk code to obfuscate program flow...\n";
             }
 
@@ -270,16 +265,13 @@ class ZypherEncoder
             }
         }
 
-        // Always use proper AES encryption, don't let debug mode change encryption method
+        // Always use proper AES encryption
         // Generate random IVs for both content and key encryption
         $content_iv = openssl_random_pseudo_bytes(16); // IV for content encryption
         $key_iv = openssl_random_pseudo_bytes(16);     // IV for key encryption
 
-        if (Constants::DEBUG && !$this->options->quietMode) {
-            echo "DEBUG: Using AES-256-CBC encryption (Debug mode is ON, extra logging enabled)\n";
-        }
-
-        if (!$this->options->quietMode || $this->options->verboseMode) {
+        if ($this->options->verboseMode) {
+            echo "DEBUG: Using AES-256-CBC encryption\n";
             echo "DEBUG: Content IV (hex): " . bin2hex($content_iv) . " (length: " . strlen($content_iv) . ")\n";
             echo "DEBUG: Key IV (hex): " . bin2hex($key_iv) . " (length: " . strlen($key_iv) . ")\n";
         }
@@ -296,9 +288,6 @@ class ZypherEncoder
         $end_time = microtime(true);
         if ($this->options->verboseMode) {
             echo "DEBUG: Key derivation took " . round(($end_time - $start_time) * 1000, 2) . " ms\n";
-        }
-
-        if (!$this->options->quietMode || $this->options->verboseMode) {
             echo "DEBUG: Using base filename '$base_filename' for key derivation\n";
             echo "DEBUG: Derived master key: $derived_master_key (length: " . strlen($derived_master_key) . ")\n";
         }
@@ -351,7 +340,7 @@ class ZypherEncoder
             return false;
         }
 
-        if (!$this->options->quietMode || $this->options->verboseMode) {
+        if ($this->options->verboseMode) {
             echo "DEBUG: Encrypted file key length: " . strlen($encrypted_file_key) . " bytes\n";
             echo "DEBUG: Encrypted content size: " . strlen($encrypted_content) . " bytes\n";
         }
@@ -429,19 +418,18 @@ EOT;
             return false;
         }
 
-        if (!$this->options->quietMode) {
-            echo "File encoded successfully!\n";
-            echo "Source: $source_file\n";
-            echo "Encoded file: $output_file\n";
-            echo "Encryption: AES-256-CBC with secure key derivation and two-layer encryption\n";
-            if ($this->options->obfuscation['enabled']) {
-                echo "Applied obfuscation: ";
-                $techniques = [];
-                if ($this->options->obfuscation['string_encryption']) $techniques[] = "string encryption";
-                if ($this->options->obfuscation['junk_code']) $techniques[] = "junk code insertion";
-                if ($this->options->obfuscation['shuffle_statements']) $techniques[] = "statement shuffling";
-                echo implode(", ", $techniques) . "\n";
-            }
+        echo "File encoded successfully!\n";
+        echo "Source: $source_file\n";
+        echo "Encoded file: $output_file\n";
+        echo "Encryption: AES-256-CBC with secure key derivation and two-layer encryption\n";
+
+        if ($this->options->obfuscation['enabled']) {
+            echo "Applied obfuscation: ";
+            $techniques = [];
+            if ($this->options->obfuscation['string_encryption']) $techniques[] = "string encryption";
+            if ($this->options->obfuscation['junk_code']) $techniques[] = "junk code insertion";
+            if ($this->options->obfuscation['shuffle_statements']) $techniques[] = "statement shuffling";
+            echo implode(", ", $techniques) . "\n";
         }
 
         return true;

@@ -6,7 +6,7 @@
  * This tool encodes PHP files into a custom format that can only be 
  * executed with the Zypher PHP extension installed.
  * 
- * Usage: zypher-encode <source_path> [output_path] [--master-key=your_master_key] [--quiet] [--verbose]
+ * Usage: zypher <source_path> [output_path] [--master-key=your_master_key] [--verbose]
  *        [--obfuscate] [--shuffle-stmts] [--junk-code] [--string-encryption] [--exclude=pattern1,pattern2]
  * If output_path is not specified, it will use source_path with _encoded suffix
  * <source_path> and [output_path] can be either files or directories
@@ -41,7 +41,7 @@ if (PHP_SAPI !== 'cli') {
 // Check if source file is provided
 if ($argc < 2) {
     echo "Error: No source path provided\n";
-    echo "Usage: zypher-encode <source_path> [output_path] [--master-key=your_master_key] [--quiet] [--verbose]\n";
+    echo "Usage: zypher <source_path> [output_path] [--master-key=your_master_key] [--verbose]\n";
     echo "       [--obfuscate] [--shuffle-stmts] [--junk-code] [--string-encryption] [--exclude=pattern1,pattern2]\n";
     echo "Where: <source_path> and [output_path] can be either a PHP file or a directory\n";
     exit(1);
@@ -87,34 +87,31 @@ $options = new Zypher\EncoderOptions($argv);
 // Create encoder instance
 $encoder = new Zypher\ZypherEncoder($options);
 
-if (!$options->quietMode) {
-    echo "=== Zypher PHP Encoder ===\n";
-    echo "Source: $source_path\n";
-    echo "Destination: $output_path\n";
+// Always show basic information, unless in verbose mode which will show more details
+echo "=== Zypher PHP Encoder ===\n";
+echo "Source: $source_path\n";
+echo "Destination: $output_path\n";
 
-    if (!empty($options->excludePatterns)) {
-        echo "Exclude patterns: " . implode(', ', $options->excludePatterns) . "\n";
-    }
+if (!empty($options->excludePatterns)) {
+    echo "Exclude patterns: " . implode(', ', $options->excludePatterns) . "\n";
+}
 
-    if (is_dir($source_path)) {
-        echo "Processing directory...\n";
-    } else {
-        echo "Processing file...\n";
-    }
+if (is_dir($source_path)) {
+    echo "Processing directory...\n";
+} else {
+    echo "Processing file...\n";
 }
 
 // Process the source path
 $stats = $encoder->processPath($source_path, $output_path);
 
-if (!$options->quietMode) {
-    echo "\n=== Encoding Summary ===\n";
-    echo "Files processed: {$stats['processed']}\n";
-    echo "Files skipped: {$stats['skipped']}\n";
-    echo "Errors: {$stats['errors']}\n";
+echo "\n=== Encoding Summary ===\n";
+echo "Files processed: {$stats['processed']}\n";
+echo "Files skipped: {$stats['skipped']}\n";
+echo "Errors: {$stats['errors']}\n";
 
-    if ($stats['processed'] > 0) {
-        echo "\nTo run encoded files, make sure the Zypher extension is installed.\n";
-    }
+if ($stats['processed'] > 0) {
+    echo "\nTo run encoded files, make sure the Zypher extension is installed.\n";
 }
 
 exit($stats['errors'] > 0 ? 1 : 0);
