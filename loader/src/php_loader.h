@@ -6,11 +6,6 @@ extern zend_module_entry zypher_module_entry;
 
 #define PHP_ZYPHER_VERSION "1.3.0"
 
-/* Define debug mode */
-#ifndef DEBUG
-#define DEBUG 0
-#endif
-
 /* For compatibility with PHP thread safety */
 #ifdef ZTS
 #include "TSRM.h"
@@ -21,10 +16,24 @@ ZEND_BEGIN_MODULE_GLOBALS(zypher)
 char *license_domain;               /* Licensed domain */
 time_t license_expiry;              /* License expiration timestamp */
 unsigned char anti_tamper_hash[32]; /* Hash to verify extension integrity */
-int debugger_protection;            /* Enable/disable anti-debugging features */
 int self_healing;                   /* Enable self-healing code */
-int debug_mode;                     /* Enable debug output */
 ZEND_END_MODULE_GLOBALS(zypher)
+
+/* Define debug macro - use compile-time flag instead of runtime configuration */
+#undef DEBUG
+#ifdef ENABLE_ZYPHER_DEBUG
+#define DEBUG 1
+#else
+#define DEBUG 0
+#endif
+
+#ifdef ENABLE_ZYPHER_DEBUG
+/* Disable debugger protection in debug mode for development ease */
+#define ZYPHER_DEBUGGER_PROTECTION 0
+#else
+/* Always enable debugger protection in release builds */
+#define ZYPHER_DEBUGGER_PROTECTION 1
+#endif
 
 /* Define a master key constant (used to decrypt per-file keys) */
 #define ZYPHER_MASTER_KEY "Zypher-Master-Key-X7pQ9r2s"

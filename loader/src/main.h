@@ -25,8 +25,4 @@ extern zend_op_array *(*original_compile_file)(zend_file_handle *file_handle, in
 /* Custom compile file handler */
 zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type);
 
-/* Define debug macro */
-#undef DEBUG
-#define DEBUG (ZYPHER_G(debug_mode) && php_get_module_initialized())
-
 #endif /* ZYPHER_MAIN_H */

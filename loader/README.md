@@ -70,6 +70,54 @@ The installation process (`make install`) will:
 
 > **IMPORTANT**: Zypher must be loaded as a `zend_extension` rather than a regular `extension` for proper code decryption. The installation process handles this automatically.
 
+### Debug Mode
+
+The Zypher extension supports a debug mode that can be enabled during build time. In debug mode, the extension will output detailed information about the decryption process, which can help with troubleshooting.
+
+To build with debug mode enabled:
+
+```bash
+cd /path/to/zypher/loader
+make -f Makefile.local debug
+make install
+```
+
+You can also use the direct configure option:
+
+```bash
+cd /path/to/zypher/loader
+./configure --with-debug
+make
+make install
+```
+
+Debug mode will show detailed output during file decoding, including:
+- Signature detection information
+- Decryption process details
+- Key derivation insights
+- File content previews
+- Temporary debug file locations
+
+#### Available Debug Build Targets
+
+The extension includes the following convenience targets:
+
+- `make -f Makefile.local debug` - Build with debug mode enabled
+- `make -f Makefile.local release` - Build in release mode (no debug output)
+- `make -f Makefile.local rebuild-debug` - Clean and rebuild with debug mode
+
+### Verifying Debug Mode
+
+To verify if debug mode is enabled, check the output of `phpinfo()`:
+
+```php
+<?php
+phpinfo();
+?>
+```
+
+Look for the "Debug Mode" row in the Zypher section, which will show "enabled" or "disabled".
+
 ### Verifying Installation
 
 Check if the extension is correctly loaded:

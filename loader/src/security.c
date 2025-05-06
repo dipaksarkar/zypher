@@ -63,7 +63,8 @@ static char *md5(const char *input, size_t input_len)
 /* Check for debugging tools */
 int zypher_check_debugger(void)
 {
-    if (!ZYPHER_G(debugger_protection))
+    /* Always use the hardcoded protection setting instead of the INI value */
+    if (!ZYPHER_DEBUGGER_PROTECTION)
     {
         if (DEBUG)
             php_printf("DEBUG: Debugger protection is disabled\n");

@@ -10,6 +10,13 @@ PHP_ARG_WITH([openssl],
     [Include OpenSSL support])],
   [yes])
 
+PHP_ARG_WITH([debug],
+  [for zypher debug support],
+  [AS_HELP_STRING([--with-debug],
+    [Enable Zypher debug mode])],
+  [no],
+  [no])
+
 if test "$PHP_ZYPHER" != "no"; then
   # Check for OpenSSL support
   if test "$PHP_OPENSSL" != "no"; then
@@ -31,6 +38,14 @@ if test "$PHP_ZYPHER" != "no"; then
     PHP_ADD_INCLUDE($OPENSSL_DIR/include)
     PHP_ADD_LIBRARY_WITH_PATH(ssl, $OPENSSL_DIR/$PHP_LIBDIR, ZYPHER_SHARED_LIBADD)
     PHP_ADD_LIBRARY_WITH_PATH(crypto, $OPENSSL_DIR/$PHP_LIBDIR, ZYPHER_SHARED_LIBADD)
+  fi
+
+  # Enable debug mode if requested
+  if test "$PHP_DEBUG" = "yes" || test "$PHP_WITH_DEBUG" = "yes"; then
+    AC_DEFINE([ENABLE_ZYPHER_DEBUG], 1, [Whether to enable Zypher debug mode])
+    # Remove optimize flags and add -g for better debugging
+    CFLAGS=`echo "$CFLAGS" | sed -e 's/-O[0-9s]//g'`
+    CFLAGS="$CFLAGS -g -O0"
   fi
 
   # Define source files

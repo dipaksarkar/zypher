@@ -17,10 +17,6 @@
 #include <openssl/err.h>
 #include <libgen.h> /* For basename() function */
 
-/* Enable debug mode for troubleshooting */
-#undef DEBUG
-#define DEBUG 1
-
 /* Store original compile file function */
 zend_op_array *(*original_compile_file)(zend_file_handle *file_handle, int type);
 
@@ -50,7 +46,6 @@ static const zend_function_entry zypher_functions[] = {
 
 /* Module configuration entries */
 PHP_INI_BEGIN()
-PHP_INI_ENTRY("zypher.debugger_protection", "1", PHP_INI_ALL, NULL)
 PHP_INI_ENTRY("zypher.license_domain", "", PHP_INI_ALL, NULL)
 PHP_INI_ENTRY("zypher.license_expiry", "0", PHP_INI_ALL, NULL)
 PHP_INI_END()
@@ -114,9 +109,7 @@ static void php_zypher_init_globals(zend_zypher_globals *globals)
 {
     globals->license_domain = NULL;
     globals->license_expiry = 0;
-    globals->debugger_protection = 1;
     globals->self_healing = 0;
-    globals->debug_mode = 0; /* Initialize debug_mode to 0 */
     memset(globals->anti_tamper_hash, 0, sizeof(globals->anti_tamper_hash));
 }
 
@@ -139,14 +132,11 @@ PHP_MINIT_FUNCTION(zypher)
     /* Replace with our handler */
     zend_compile_file = zypher_compile_file;
 
-    /* Initialize debug mode based on INI setting */
-    ZYPHER_G(debug_mode) = INI_INT("zypher.debug_mode");
-
     if (DEBUG)
     {
         php_printf("Zypher PHP Loader v%s initialized (Debug mode is %s)\n",
                    PHP_ZYPHER_VERSION,
-                   ZYPHER_G(debug_mode) ? "ON" : "OFF");
+                   DEBUG ? "ON" : "OFF");
     }
 
     return SUCCESS;
@@ -175,8 +165,9 @@ PHP_MINFO_FUNCTION(zypher)
     php_info_print_table_row(2, "Version", PHP_ZYPHER_VERSION);
     php_info_print_table_row(2, "OpenSSL Support", "enabled");
     php_info_print_table_row(2, "File Format", "encrypted (AES-256-CBC)");
-    php_info_print_table_row(2, "Anti-debugging", ZYPHER_G(debugger_protection) ? "enabled" : "disabled");
+    php_info_print_table_row(2, "Anti-debugging", ZYPHER_DEBUGGER_PROTECTION ? "enabled (hardcoded)" : "disabled");
     php_info_print_table_row(2, "Advanced Obfuscation", "enabled");
+    php_info_print_table_row(2, "Debug Mode", DEBUG ? "enabled" : "disabled");
     php_info_print_table_end();
 
     DISPLAY_INI_ENTRIES();
@@ -356,8 +347,23 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
         zval source_string;
         ZVAL_STRINGL(&source_string, decoded, decoded_len);
 
-        /* Compile the code directly from memory */
-        op_array = zend_compile_string(&source_string, file_handle->filename, type);
+        /* Compile the code directly from memory - handle PHP version differences */
+#if PHP_VERSION_ID >= 80300
+        /* PHP 8.3+ expects different parameter types */
+        zend_string *source_str = zval_get_string(&source_string);
+
+        /* Get the filename as a string from file_handle */
+        const char *filename_for_compile = ZSTR_VAL(file_handle->filename);
+
+        /* Call zend_compile_string with appropriate parameter types for PHP 8.3 */
+        op_array = zend_compile_string(source_str, filename_for_compile, type);
+
+        /* Clean up the strings */
+        zend_string_release(source_str);
+#else
+        /* Older PHP versions expect zval* and const char* */
+        op_array = zend_compile_string(&source_string, ZSTR_VAL(file_handle->filename), type);
+#endif
 
         /* Clean up */
         zval_ptr_dtor(&source_string);
