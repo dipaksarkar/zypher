@@ -106,9 +106,9 @@ echo $advancedOutput;
 echo "\nStep 2: Encoding PHP files\n";
 echo "-----------------------------\n";
 
-$encodeHelloCommand = "php $encoderPath $helloFile $helloFileEncoded";
-$encodeAdvancedCommand = "php $encoderPath $advancedFile $advancedFileEncoded";
-$encodeAdvancedObfuscateCommand = "php $encoderPath $advancedFile $advancedObfuscationEncoded --obfuscate";
+$encodeHelloCommand = "php $encoderPath $helloFile $helloFileEncoded --verbose";
+$encodeAdvancedCommand = "php $encoderPath $advancedFile $advancedFileEncoded --verbose";
+$encodeAdvancedObfuscateCommand = "php $encoderPath $advancedFile $advancedObfuscationEncoded --verbose --obfuscate";
 
 echo "Encoding hello.php... ";
 $encodeHelloResult = shell_exec($encodeHelloCommand);

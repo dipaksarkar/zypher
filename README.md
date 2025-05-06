@@ -72,10 +72,9 @@ composer install
 ./bin/zypher /path/to/source/dir /path/to/output/dir --exclude=vendor/*,tests/*
 ```
 
-### Quiet or Verbose Mode
+### Verbose Mode
 
 ```bash
-./bin/zypher /path/to/source.php /path/to/output.php --quiet
 ./bin/zypher /path/to/source.php /path/to/output.php --verbose
 ```
 
@@ -88,8 +87,7 @@ composer install
 | `--string-encryption` | Enable string literal encryption |
 | `--junk-code` | Insert junk code to confuse reverse-engineering attempts |
 | `--shuffle-stmts` | Shuffle statement order where possible |
-| `--exclude=PATTERN` | Exclude files matching pattern (comma-separated) |
-| `--quiet` | Suppress non-error output |
+| `--exclude=PATTERN` | Exclude files matching pattern (comma-separated) |\
 | `--verbose` | Show detailed encoding information |
 
 ## Extension Installation
