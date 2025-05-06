@@ -192,8 +192,6 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
     char signature[SIGNATURE_LENGTH + 1] = {0};
     int is_encoded = 0;
     zend_op_array *op_array = NULL;
-    zend_file_handle decoded_file_handle;
-    char file_key[65] = {0}; /* 64 hex chars + null */
     const char *filename;
 
     /* Skip if no file or already processed */
@@ -317,85 +315,10 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
         if (DEBUG)
             php_printf("DEBUG: Successfully decrypted %zu bytes of content\n", decoded_len);
 
-        /* Create a temporary file for the decoded content */
-        char *tempname;
-        php_stream *tempstream;
-
-        tempname = emalloc(MAXPATHLEN);
-        php_sprintf(tempname, "tmp_zypher_XXXXXX");
-
-        /* Create temp file */
-        int fd = mkstemp(tempname);
-        if (fd < 0)
-        {
-            php_error_docref(NULL, E_WARNING, "Failed to create temporary file");
-            if (DEBUG)
-                php_printf("DEBUG: Failed to create temp file\n");
-            efree(decoded);
-            efree(tempname);
-            return NULL;
-        }
-
+        /* Write decoded content to debug file when in debug mode */
         if (DEBUG)
         {
-            php_printf("DEBUG: Created temp file: %s\n", tempname);
-        }
-
-        /* Open the temp file as a stream */
-        tempstream = php_stream_fopen_from_fd(fd, "wb", NULL);
-        if (!tempstream)
-        {
-            close(fd);
-            unlink(tempname);
-            if (DEBUG)
-                php_printf("DEBUG: Failed to open temp file as stream\n");
-            efree(decoded);
-            efree(tempname);
-            return NULL;
-        }
-
-        /* Write the decoded content to the temp file */
-        if (php_stream_write(tempstream, decoded, decoded_len) != decoded_len)
-        {
-            php_stream_close(tempstream);
-            unlink(tempname);
-            if (DEBUG)
-                php_printf("DEBUG: Failed to write decoded content to temp file\n");
-            efree(decoded);
-            efree(tempname);
-            return NULL;
-        }
-
-        if (DEBUG)
-        {
-            php_printf("DEBUG: Wrote decoded content to temp file\n");
-        }
-
-        php_stream_close(tempstream);
-
-        /* Prepare a file handle for the decoded content */
-        memset(&decoded_file_handle, 0, sizeof(zend_file_handle));
-        decoded_file_handle.type = ZEND_HANDLE_FP;
-        decoded_file_handle.filename = file_handle->filename;
-        decoded_file_handle.handle.fp = fopen(tempname, "rb");
-
-        if (!decoded_file_handle.handle.fp)
-        {
-            unlink(tempname);
-            if (DEBUG)
-                php_printf("DEBUG: Failed to reopen temp file for reading\n");
-            efree(decoded);
-            efree(tempname);
-            return NULL;
-        }
-
-        decoded_file_handle.opened_path = file_handle->opened_path;
-        decoded_file_handle.primary_script = file_handle->primary_script;
-
-        if (DEBUG)
-        {
-            php_printf("DEBUG: Compiling decoded content\n");
-            php_printf("DEBUG: Compilation of decoded content starting...\n");
+            php_printf("DEBUG: Compiling decoded content in memory\n");
             php_printf("DEBUG: First 100 chars of decoded content: '");
             size_t preview_len = decoded_len > 100 ? 100 : decoded_len;
             for (size_t i = 0; i < preview_len; i++)
@@ -412,9 +335,10 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
             }
             php_printf("'\n");
 
-            // Write the decoded content to a debug file for inspection
+            /* Write the decoded content to a debug file for inspection */
             char debug_file[MAXPATHLEN];
-            snprintf(debug_file, sizeof(debug_file), "/tmp/zypher_debug_%d.php", (int)time(NULL));
+            snprintf(debug_file, sizeof(debug_file), "/tmp/zypher_debug_%s_%d.php",
+                     basename((char *)filename), (int)time(NULL));
             FILE *df = fopen(debug_file, "wb");
             if (df)
             {
@@ -422,27 +346,34 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
                 fclose(df);
                 php_printf("DEBUG: Wrote decoded content to debug file: %s\n", debug_file);
             }
+            else
+            {
+                php_printf("DEBUG: Failed to write debug file: %s\n", debug_file);
+            }
         }
 
-        /* Compile the decoded content */
-        op_array = original_compile_file(&decoded_file_handle, type);
+        /* IN-MEMORY COMPILATION: Use zend_compile_string instead of temporary files */
+        zval source_string;
+        ZVAL_STRINGL(&source_string, decoded, decoded_len);
+
+        /* Compile the code directly from memory */
+        op_array = zend_compile_string(&source_string, file_handle->filename, type);
+
+        /* Clean up */
+        zval_ptr_dtor(&source_string);
+        efree(decoded);
 
         if (!op_array)
         {
             if (DEBUG)
-                php_printf("DEBUG: Compilation failed\n");
+                php_printf("DEBUG: In-memory compilation failed\n");
         }
         else
         {
             if (DEBUG)
-                php_printf("DEBUG: Compilation successful\n");
+                php_printf("DEBUG: In-memory compilation successful\n");
         }
 
-        /* Clean up */
-        fclose(decoded_file_handle.handle.fp);
-        unlink(tempname);
-        efree(tempname);
-        efree(decoded);
         return op_array;
     }
 
