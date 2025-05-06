@@ -48,7 +48,7 @@ int verify_content_integrity(const char *content, size_t length, const char *exp
 void calculate_content_checksum(const char *content, size_t length, char *output);
 
 /* Opcode handling functions */
-zend_op_array *zypher_load_opcodes(zval *opcodes, zend_string *filename);
+zend_op_array *zypher_load_opcodes(const char *decoded_data, const char *filename);
 void zypher_free_opcode_cache(void);
 
 /* PHP functions exported by the extension */

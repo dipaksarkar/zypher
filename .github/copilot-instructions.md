@@ -17,7 +17,7 @@ The system works by:
 ```
 zypher/
 ├── build/               # Build artifacts and generated key (zypher_master_key.h)
-├── encoder/             # Encoder source files (main.c, encoder.c)
+├── encoder/             # Encoder source files (main.c, encoder.c, etc.)
 ├── include/             # Common header files for both encoder and loader
 ├── loader/              # PHP extension loader implementation
 │   ├── include/         # Loader-specific headers
@@ -36,11 +36,12 @@ zypher/
 ## Encoder Process Flow
 
 1. Parse source PHP file
-2. Compile to opcodes using `zend_compile_file()`
-3. Serialize opcodes
-4. Generate a file-specific key derived from the master key
-5. Encrypt serialized opcodes
-6. Store in output file with PHP stub
+2. Remove comments and whitespace
+3. Compile to opcodes using `zend_compile_file()`
+4. Serialize opcodes
+5. Generate a file-specific key derived from the master key
+6. Encrypt serialized opcodes
+7. Store in output file with PHP stub
 
 ## Loader Process Flow
 

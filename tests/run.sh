@@ -21,7 +21,7 @@ fi
 # Set paths
 ZYPHER_ROOT=$(cd .. && pwd)
 ZYPHER_BIN="$ZYPHER_ROOT/zypher"
-ZYPHER_LOADER="$ZYPHER_ROOT/loader/zypher.so"
+ZYPHER_LOADER="$ZYPHER_ROOT/loader/modules/zypher.so"
 
 # Check if encoder binary exists
 if [ ! -f "$ZYPHER_BIN" ]; then

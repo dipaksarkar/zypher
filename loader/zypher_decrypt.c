@@ -282,424 +282,117 @@ int extract_file_metadata(const char *encoded_content, size_t encoded_length,
     return ZYPHER_ERR_NONE;
 }
 
-/* Enhanced decrypt function that handles both source code and opcodes */
-char *decrypt_file_content(const char *encoded_content, size_t encoded_length,
-                           const char *master_key, const char *filename,
-                           size_t *out_length, zypher_file_metadata *metadata)
+/* Decrypt and deserialize PHP code from encoded data */
+int decrypt_php_code(const char *encoded_data, size_t length, char **source_code, char **filename)
 {
-    EVP_CIPHER_CTX *ctx;
-    const EVP_CIPHER *cipher;
-    int outlen, tmplen;
-    zend_string *decoded_str;
-    size_t pos = 0;
-    const char *signature_pos;
-    unsigned long openssl_err = 0;
+    unsigned char *decrypted = NULL;
+    size_t decrypted_len = 0;
+    char *serialized_data = NULL;
+    size_t serialized_len = 0;
+    char md5_hash[33] = {0};
+    char computed_md5[33] = {0};
+    int ret = 0;
 
-    /* Debug output */
-    if (DEBUG)
-    {
-        php_printf("DEBUG: Decrypting content of length %zu\n", encoded_length);
-        php_printf("DEBUG: Using master key: '%s'\n", master_key);
-        php_printf("DEBUG: Using filename for decryption: '%s'\n", filename);
+    /* Extract the IV from the encoded data */
+    if (length < IV_LENGTH + 16)
+    { /* IV + minimum ciphertext */
+        return 0;
     }
 
-    /* Find Zypher signature anywhere in the file, not just at the beginning */
-    signature_pos = strstr(encoded_content, ZYPHER_SIGNATURE);
-    if (!signature_pos || (size_t)(signature_pos - encoded_content) >= encoded_length - SIGNATURE_LENGTH)
+    unsigned char iv[IV_LENGTH];
+    memcpy(iv, encoded_data, IV_LENGTH);
+
+    /* Decrypt the data using the decrypt_file_content function instead */
+    size_t output_len = 0;
+    char *decrypted_content = decrypt_file_content(encoded_data + IV_LENGTH,
+                                                   length - IV_LENGTH,
+                                                   ZYPHER_MASTER_KEY,
+                                                   *filename,
+                                                   &output_len,
+                                                   NULL);
+
+    if (!decrypted_content)
     {
-        if (DEBUG)
-            php_printf("DEBUG: Signature not found in the content\n");
-        return NULL;
+        return 0;
     }
 
-    /* Base64 decode the content after signature */
-    decoded_str = php_base64_decode(
-        (const unsigned char *)signature_pos + SIGNATURE_LENGTH,
-        encoded_length - ((size_t)(signature_pos - encoded_content) + SIGNATURE_LENGTH));
+    decrypted = (unsigned char *)decrypted_content;
+    decrypted_len = output_len;
 
-    if (!decoded_str)
+    /* Verify minimum length for MD5 (32 bytes) + serialized data */
+    if (decrypted_len <= 32)
     {
-        if (DEBUG)
-            php_printf("DEBUG: Base64 decoding failed\n");
-        return NULL;
-    }
-
-    /* Handle byte rotation - un-rotate bytes */
-    char *rotated_content = NULL;
-    rotated_content = emalloc(ZSTR_LEN(decoded_str) + 1);
-
-    for (size_t i = 0; i < ZSTR_LEN(decoded_str); i++)
-    {
-        rotated_content[i] = (char)((unsigned char)(ZSTR_VAL(decoded_str)[i] - BYTE_ROTATION_OFFSET) & 0xFF);
-    }
-    rotated_content[ZSTR_LEN(decoded_str)] = '\0';
-
-    /* Replace decoded_str with rotated content */
-    zend_string *old_str = decoded_str;
-    decoded_str = zend_string_init(rotated_content, ZSTR_LEN(old_str), 0);
-    zend_string_release(old_str);
-    efree(rotated_content);
-
-    /* Parse the format - new format with version and format_type */
-    pos = 0;
-    unsigned char *data = (unsigned char *)ZSTR_VAL(decoded_str);
-    size_t data_len = ZSTR_LEN(decoded_str);
-
-    /* Extract format version */
-    if (data_len < pos + 2)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Data too short for version and format type bytes\n");
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    /* Extract format version and type */
-    metadata->format_version = data[pos++];
-    metadata->format_type = data[pos++];
-
-    if (DEBUG)
-    {
-        php_printf("DEBUG: Format version: %d\n", metadata->format_version);
-        php_printf("DEBUG: Format type: %d (opcode)\n", metadata->format_type);
-    }
-
-    /* Verify format version */
-    if (metadata->format_version != ZYPHER_FORMAT_VERSION)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Unsupported format version %d\n", metadata->format_version);
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    /* Extract timestamp */
-    if (data_len < pos + 4)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Data too short for timestamp\n");
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    metadata->timestamp = (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3];
-    pos += 4;
-
-    if (DEBUG)
-    {
-        php_printf("DEBUG: Timestamp: %u\n", metadata->timestamp);
-    }
-
-    /* Verify license based on timestamp */
-    int license_error = zypher_verify_license(NULL, metadata->timestamp);
-    if (license_error != ZYPHER_ERR_NONE)
-    {
-        if (DEBUG)
-        {
-            switch (license_error)
-            {
-            case ZYPHER_ERR_EXPIRED:
-                php_printf("DEBUG: License expired\n");
-                break;
-            case ZYPHER_ERR_DOMAIN:
-                php_printf("DEBUG: Domain mismatch\n");
-                break;
-            default:
-                php_printf("DEBUG: License error %d\n", license_error);
-                break;
-            }
-        }
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    /* Extract content IV */
-    if (data_len < pos + IV_LENGTH)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Data too short for content IV\n");
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    memcpy(metadata->content_iv, data + pos, IV_LENGTH);
-    pos += IV_LENGTH;
-
-    /* Extract key IV */
-    if (data_len < pos + IV_LENGTH)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Data too short for key IV\n");
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    memcpy(metadata->key_iv, data + pos, IV_LENGTH);
-    pos += IV_LENGTH;
-
-    /* Extract key length */
-    if (data_len < pos + 4)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Data too short for key length\n");
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    uint32_t key_length = (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3];
-    pos += 4;
-
-    if (DEBUG)
-    {
-        php_printf("DEBUG: Key length: %u\n", key_length);
-    }
-
-    /* Extract encrypted file key */
-    if (data_len < pos + key_length)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Data too short for encrypted file key\n");
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    char *encrypted_file_key = emalloc(key_length + 1);
-    memcpy(encrypted_file_key, data + pos, key_length);
-    encrypted_file_key[key_length] = '\0';
-    pos += key_length;
-
-    /* Extract original filename length */
-    if (data_len < pos + 1)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Data too short for filename length\n");
-        efree(encrypted_file_key);
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    uint8_t filename_length = data[pos++];
-
-    /* Extract original filename - important for key derivation */
-    if (data_len < pos + filename_length)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Data too short for original filename\n");
-        efree(encrypted_file_key);
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    metadata->orig_filename = emalloc(filename_length + 1);
-    memcpy(metadata->orig_filename, data + pos, filename_length);
-    metadata->orig_filename[filename_length] = '\0';
-    pos += filename_length;
-
-    if (DEBUG)
-    {
-        php_printf("DEBUG: Original filename: %s\n", metadata->orig_filename);
-    }
-
-    /* The rest is encrypted content */
-    size_t encrypted_content_length = data_len - pos;
-    if (encrypted_content_length == 0)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: No encrypted content\n");
-        efree(encrypted_file_key);
-        efree(metadata->orig_filename);
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    /* Derive master key from original filename */
-    char derived_key[65];
-
-    /* Use original filename for key derivation, not the current one */
-    zypher_derive_key(master_key, metadata->orig_filename, derived_key, 1000);
-
-    if (DEBUG)
-    {
-        php_printf("DEBUG: Derived master key: %s\n", derived_key);
-    }
-
-    /* Create OpenSSL cipher context */
-    ctx = EVP_CIPHER_CTX_new();
-    if (!ctx)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Failed to create cipher context\n");
-        efree(encrypted_file_key);
-        efree(metadata->orig_filename);
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    /* Select AES-256-CBC cipher */
-    cipher = EVP_aes_256_cbc();
-
-    /* Decrypt the file key with derived master key */
-    char *decrypted_file_key = emalloc(key_length + EVP_MAX_BLOCK_LENGTH);
-
-    /* Initialize decryption process */
-    if (EVP_DecryptInit_ex(ctx, cipher, NULL,
-                           (unsigned char *)derived_key, metadata->key_iv) != 1)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Failed to initialize decryption\n");
-        EVP_CIPHER_CTX_free(ctx);
-        efree(encrypted_file_key);
-        efree(metadata->orig_filename);
-        efree(decrypted_file_key);
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    /* Perform decryption */
-    if (EVP_DecryptUpdate(ctx, (unsigned char *)decrypted_file_key, &outlen,
-                          (unsigned char *)encrypted_file_key, key_length) != 1)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Failed to decrypt file key\n");
-        EVP_CIPHER_CTX_free(ctx);
-        efree(encrypted_file_key);
-        efree(metadata->orig_filename);
-        efree(decrypted_file_key);
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    /* Finalize decryption */
-    if (EVP_DecryptFinal_ex(ctx, (unsigned char *)decrypted_file_key + outlen, &tmplen) != 1)
-    {
-        openssl_err = ERR_get_error();
-        char err_msg[256] = {0};
-        ERR_error_string_n(openssl_err, err_msg, sizeof(err_msg));
-
-        if (DEBUG)
-        {
-            php_printf("DEBUG: Failed to finalize key decryption: %s (error code: 0x%lx)\n",
-                       err_msg, openssl_err);
-        }
-        EVP_CIPHER_CTX_free(ctx);
-        efree(encrypted_file_key);
-        efree(metadata->orig_filename);
-        efree(decrypted_file_key);
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    outlen += tmplen;
-    decrypted_file_key[outlen] = '\0';
-
-    /* Store decrypted file key in metadata for later use */
-    metadata->file_key = estrndup(decrypted_file_key, outlen);
-
-    if (DEBUG)
-    {
-        php_printf("DEBUG: Decrypted file key: %s (length: %d)\n", decrypted_file_key, outlen);
-    }
-
-    /* Now decrypt actual file content using the decrypted file key */
-    EVP_CIPHER_CTX_reset(ctx);
-
-    /* Initialize encryption with file key and content IV */
-    if (EVP_DecryptInit_ex(ctx, cipher, NULL,
-                           (unsigned char *)decrypted_file_key, metadata->content_iv) != 1)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Failed to initialize content decryption\n");
-        EVP_CIPHER_CTX_free(ctx);
-        efree(encrypted_file_key);
-        efree(metadata->file_key);
-        efree(metadata->orig_filename);
-        efree(decrypted_file_key);
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    /* Allocate memory for decrypted content */
-    char *decrypted = emalloc(encrypted_content_length + EVP_MAX_BLOCK_LENGTH + 1);
-
-    /* Perform decryption */
-    if (EVP_DecryptUpdate(ctx, (unsigned char *)decrypted, &outlen,
-                          (unsigned char *)(data + pos), encrypted_content_length) != 1)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Failed to decrypt content\n");
-        EVP_CIPHER_CTX_free(ctx);
-        efree(encrypted_file_key);
-        efree(metadata->file_key);
-        efree(metadata->orig_filename);
-        efree(decrypted_file_key);
         efree(decrypted);
-        zend_string_release(decoded_str);
-        return NULL;
+        return 0;
     }
 
-    /* Finalize decryption */
-    if (EVP_DecryptFinal_ex(ctx, (unsigned char *)decrypted + outlen, &tmplen) != 1)
+    /* Extract MD5 hash (first 32 bytes) */
+    memcpy(md5_hash, decrypted, 32);
+    md5_hash[32] = '\0';
+
+    /* Extract serialized data */
+    serialized_data = (char *)decrypted + 32;
+    serialized_len = decrypted_len - 32;
+
+    /* Calculate MD5 instead of calling compute_md5 */
+    EVP_MD_CTX *mdctx;
+    unsigned int md_len;
+    unsigned char digest[16];
+
+    mdctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(mdctx, EVP_md5(), NULL);
+    EVP_DigestUpdate(mdctx, (unsigned char *)serialized_data, serialized_len);
+    EVP_DigestFinal_ex(mdctx, digest, &md_len);
+    EVP_MD_CTX_free(mdctx);
+
+    for (int i = 0; i < 16; i++)
     {
-        openssl_err = ERR_get_error();
-        if (DEBUG)
-        {
-            php_printf("DEBUG: Failed to finalize content decryption: %s (error code: %lu)\n",
-                       ERR_error_string(openssl_err, NULL), openssl_err);
-        }
-        EVP_CIPHER_CTX_free(ctx);
-        efree(encrypted_file_key);
-        efree(metadata->file_key);
-        efree(metadata->orig_filename);
-        efree(decrypted_file_key);
+        sprintf(&computed_md5[i * 2], "%02x", digest[i]);
+    }
+    computed_md5[32] = '\0';
+
+    /* Verify MD5 hash */
+    if (strcmp(md5_hash, computed_md5) != 0)
+    {
         efree(decrypted);
-        zend_string_release(decoded_str);
-        return NULL;
+        return 0;
     }
 
-    outlen += tmplen;
-    decrypted[outlen] = '\0';
+    /* Unserialize data which contains ['filename' => string, 'contents' => string] */
+    zval zv_data;
+    ZVAL_NULL(&zv_data);
+
+    /* PHP 8.3 compatible unserialization */
+    const unsigned char *p = (const unsigned char *)serialized_data;
+    const unsigned char *end = p + serialized_len;
+
+    if (!php_var_unserialize(&zv_data, &p, end, NULL))
+    {
+        efree(decrypted);
+        return 0;
+    }
+
+    /* Extract filename and source code from unserialized data */
+    if (Z_TYPE(zv_data) == IS_ARRAY)
+    {
+        zval *z_filename = zend_hash_str_find(Z_ARRVAL(zv_data), "filename", sizeof("filename") - 1);
+        zval *z_contents = zend_hash_str_find(Z_ARRVAL(zv_data), "contents", sizeof("contents") - 1);
+
+        if (z_filename && Z_TYPE_P(z_filename) == IS_STRING &&
+            z_contents && Z_TYPE_P(z_contents) == IS_STRING)
+        {
+            *filename = estrndup(Z_STRVAL_P(z_filename), Z_STRLEN_P(z_filename));
+            *source_code = estrndup(Z_STRVAL_P(z_contents), Z_STRLEN_P(z_contents));
+
+            ret = 1; /* Success */
+        }
+    }
 
     /* Clean up */
-    EVP_CIPHER_CTX_free(ctx);
-    efree(encrypted_file_key);
-    efree(decrypted_file_key);
+    zval_ptr_dtor(&zv_data);
+    efree(decrypted);
 
-    /* Extract checksum from the beginning of decrypted data */
-    memcpy(metadata->checksum, decrypted, 32);
-    metadata->checksum[32] = '\0';
-
-    /* Move the actual content to the beginning */
-    memmove(decrypted, decrypted + 32, outlen - 32 + 1);
-    outlen -= 32;
-
-    if (DEBUG)
-    {
-        php_printf("DEBUG: Extracted checksum: %s\n", metadata->checksum);
-    }
-
-    /* Verify content integrity with checksum */
-    if (verify_content_integrity(decrypted, outlen, metadata->checksum) != ZYPHER_ERR_NONE)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Content integrity check failed\n");
-        efree(metadata->file_key);
-        efree(metadata->orig_filename);
-        efree(decrypted);
-        zend_string_release(decoded_str);
-        return NULL;
-    }
-
-    if (DEBUG)
-    {
-        php_printf("DEBUG: Content integrity verified!\n");
-    }
-
-    /* Set output length */
-    if (out_length)
-        *out_length = outlen;
-
-    zend_string_release(decoded_str);
-    return decrypted;
+    return ret;
 }
 
 /* Process and load opcodes from serialized data */
@@ -738,29 +431,25 @@ zend_op_array *process_opcodes(char *opcode_data, size_t data_len, zend_string *
         if (DEBUG)
             php_printf("DEBUG: Found cached opcodes for %s\n", ZSTR_VAL(filename));
 
-        /* Create op_array from cached opcodes */
-        zend_op_array *op_array = zypher_load_opcodes(cached_opcodes, filename);
+        /* Create op_array from cached opcodes by converting to string first */
+        char *decoded_data = estrndup(Z_STRVAL_P(cached_opcodes), Z_STRLEN_P(cached_opcodes));
+        zend_op_array *op_array = zypher_load_opcodes(decoded_data, ZSTR_VAL(filename));
+        efree(decoded_data);
         zend_string_release(filename_key);
         return op_array;
     }
 
     /* Try to unserialize the opcode data */
-    php_unserialize_data_t var_hash;
-    PHP_VAR_UNSERIALIZE_INIT(var_hash);
-
     const unsigned char *p = (const unsigned char *)opcode_data;
     const unsigned char *end = p + data_len;
 
-    if (!php_var_unserialize(&opcodes, &p, end, &var_hash))
+    if (!php_var_unserialize(&opcodes, &p, end, NULL))
     {
         if (DEBUG)
             php_printf("DEBUG: Failed to unserialize opcode data\n");
-        PHP_VAR_UNSERIALIZE_DESTROY(var_hash);
         zend_string_release(filename_key);
         return NULL;
     }
-
-    PHP_VAR_UNSERIALIZE_DESTROY(var_hash);
 
     if (Z_TYPE(opcodes) != IS_ARRAY)
     {
@@ -777,7 +466,10 @@ zend_op_array *process_opcodes(char *opcode_data, size_t data_len, zend_string *
     /* Use try/catch equivalent with zend_try/zend_catch to prevent segfaults */
     zend_try
     {
-        op_array = zypher_load_opcodes(&opcodes, filename);
+        /* Convert zval to string for zypher_load_opcodes */
+        char *decoded_data = estrndup(Z_STRVAL_P(&opcodes), Z_STRLEN_P(&opcodes));
+        op_array = zypher_load_opcodes(decoded_data, ZSTR_VAL(filename));
+        efree(decoded_data);
     }
     zend_catch
     {
@@ -815,4 +507,123 @@ void zypher_free_opcode_cache(void)
         FREE_HASHTABLE(ZYPHER_G(opcode_cache));
         ZYPHER_G(opcode_cache) = NULL;
     }
+}
+
+/* Function to decrypt and execute encoded PHP content */
+zend_op_array *decrypt_and_execute(const char *encrypted_data, size_t data_size, const char *filename)
+{
+    unsigned char *decrypted = NULL;
+    size_t decrypted_size = 0;
+    zend_op_array *op_array = NULL;
+    char *checksum_part, *serialized_part;
+    char calculated_checksum[33];
+    size_t checksum_len = 32; /* MD5 hex digest length */
+    zval data_zval;
+    HashTable *data_array;
+    zval *source_zval, *filename_zval;
+
+    /* Decrypt the encoded content using decrypt_file_content instead of decrypt_content */
+    size_t output_len = 0;
+    zypher_file_metadata metadata = {0};
+
+    char *decrypted_content = decrypt_file_content(encrypted_data, data_size,
+                                                   ZYPHER_MASTER_KEY, filename,
+                                                   &output_len, &metadata);
+
+    if (!decrypted_content)
+    {
+        return NULL;
+    }
+
+    decrypted = (unsigned char *)decrypted_content;
+    decrypted_size = output_len;
+
+    /* Verify there's enough data for checksum + serialized data */
+    if (decrypted_size <= checksum_len)
+    {
+        efree(decrypted);
+        return NULL;
+    }
+
+    /* Split into checksum and serialized data */
+    checksum_part = (char *)decrypted;
+    serialized_part = checksum_part + checksum_len;
+    size_t serialized_len = decrypted_size - checksum_len;
+
+    /* Calculate checksum of serialized data using EVP APIs */
+    unsigned char digest[16];
+    unsigned int md_len;
+    EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(mdctx, EVP_md5(), NULL);
+    EVP_DigestUpdate(mdctx, (unsigned char *)serialized_part, serialized_len);
+    EVP_DigestFinal_ex(mdctx, digest, &md_len);
+    EVP_MD_CTX_free(mdctx);
+
+    /* Convert binary digest to hex string */
+    for (int i = 0; i < 16; i++)
+    {
+        sprintf(calculated_checksum + (i * 2), "%02x", digest[i]);
+    }
+    calculated_checksum[32] = '\0';
+
+    /* Compare checksums */
+    if (strncmp(checksum_part, calculated_checksum, checksum_len) != 0)
+    {
+        zend_error(E_WARNING, "Zypher: Checksum verification failed for %s", filename);
+        efree(decrypted);
+        return NULL;
+    }
+
+    /* Unserialize the data - using PHP 8.3 compatible code */
+    ZVAL_NULL(&data_zval);
+
+    const unsigned char *p = (const unsigned char *)serialized_part;
+    const unsigned char *end = p + serialized_len;
+
+    if (!php_var_unserialize(&data_zval, &p, end, NULL))
+    {
+        zend_error(E_WARNING, "Zypher: Failed to unserialize data");
+        efree(decrypted);
+        return NULL;
+    }
+
+    /* Extract the data from the unserialized array */
+    if (Z_TYPE(data_zval) != IS_ARRAY)
+    {
+        zend_error(E_WARNING, "Zypher: Invalid data format");
+        zval_ptr_dtor(&data_zval);
+        efree(decrypted);
+        return NULL;
+    }
+
+    data_array = Z_ARRVAL(data_zval);
+
+    /* Get source code from array */
+    if ((source_zval = zend_hash_str_find(data_array, "contents", sizeof("contents") - 1)) == NULL ||
+        Z_TYPE_P(source_zval) != IS_STRING)
+    {
+        zend_error(E_WARNING, "Zypher: Missing or invalid source code in encoded file");
+        zval_ptr_dtor(&data_zval);
+        efree(decrypted);
+        return NULL;
+    }
+
+    /* Get original filename from array */
+    if ((filename_zval = zend_hash_str_find(data_array, "filename", sizeof("filename") - 1)) != NULL &&
+        Z_TYPE_P(filename_zval) == IS_STRING)
+    {
+        /* Use original filename for error messages */
+        filename = Z_STRVAL_P(filename_zval);
+    }
+
+    /* Evaluate the PHP code using PHP 8.3 compatible API */
+    zend_string *filename_str = zend_string_init(filename, strlen(filename), 0);
+    op_array = zend_compile_string(Z_STR_P(source_zval), filename_str, ZEND_COMPILE_POSITION_AT_OPEN_TAG);
+    zend_string_release(filename_str);
+
+    /* Clean up */
+    zval_ptr_dtor(&data_zval);
+    efree(decrypted);
+
+    return op_array;
 }

@@ -1,6 +1,6 @@
 # Makefile for Zypher PHP Encoder/Loader System
 # Author: Zypher Team
-# Date: May 6, 2025
+# Date: May 7, 2025
 
 # Directories
 ROOT_DIR := $(shell pwd)
@@ -23,11 +23,8 @@ PHP_BINARY := $(shell which $(PHP))
 PHP_EXTENSION_DIR := $(shell $(PHP_CONFIG) --extension-dir)
 
 # Compiler flags
-CFLAGS := -Wall -O2 -fPIC -I$(INCLUDE_DIR) -I/usr/include
-LDFLAGS := -lssl -lcrypto -lz
-
-# Get PHP include paths
-PHP_INCLUDES := $(shell $(PHP_CONFIG) --includes)
+CFLAGS := -Wall -O2 -fPIC -I$(INCLUDE_DIR)
+LDFLAGS := -lssl -lcrypto
 
 # Master key file
 MASTER_KEY_FILE := $(BUILD_DIR)/zypher_master_key.h
@@ -35,6 +32,13 @@ MASTER_KEY_FILE := $(BUILD_DIR)/zypher_master_key.h
 # Output files
 ENCODER_BIN := $(ROOT_DIR)/zypher
 LOADER_SO := $(LOADER_DIR)/modules/zypher.so
+
+# Encoder source files
+ENCODER_SOURCES := $(ENCODER_DIR)/main.c \
+                  $(ENCODER_DIR)/encoder.c \
+                  $(ENCODER_DIR)/encoder_crypto.c \
+                  $(ENCODER_DIR)/encoder_opcode.c \
+                  $(ENCODER_DIR)/encoder_utils.c
 
 # Default target
 all: directories master_key encoder loader
@@ -81,9 +85,9 @@ prepare_loader: $(MASTER_KEY_FILE)
 # Build the Encoder
 encoder: $(ENCODER_BIN)
 
-$(ENCODER_BIN): $(ENCODER_DIR)/main.c $(ENCODER_DIR)/encoder.c $(INCLUDE_DIR)/zypher_common.h $(INCLUDE_DIR)/zypher_encoder.h $(MASTER_KEY_FILE)
+$(ENCODER_BIN): $(ENCODER_SOURCES) $(INCLUDE_DIR)/zypher_common.h $(INCLUDE_DIR)/zypher_encoder.h $(MASTER_KEY_FILE)
 	@echo "Building Zypher Encoder..."
-	$(CC) $(CFLAGS) $(PHP_INCLUDES) $(ENCODER_DIR)/main.c $(ENCODER_DIR)/encoder.c -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(ENCODER_SOURCES) -o $@ $(LDFLAGS)
 	@echo "Encoder built successfully: $(ENCODER_BIN)"
 	@chmod +x $(ENCODER_BIN)
 
@@ -94,14 +98,18 @@ reset_loader:
 	@rm -rf $(LOADER_DIR)/autom4te.cache $(LOADER_DIR)/build/config.* $(LOADER_DIR)/modules/* 2>/dev/null || true
 
 # Build the Loader PHP Extension with support for debug mode
-loader: prepare_loader reset_loader
-	@echo "Building PHP extension loader..."
-	@cd $(LOADER_DIR) && \
-	$(PHPIZE) && \
-	./configure --with-php-config=$(PHP_CONFIG) --with-openssl=/usr/local/opt/openssl && \
-	make CFLAGS="$(CFLAGS) -I$(INCLUDE_DIR)" && \
-	cp modules/zypher.so .
-	@echo "PHP extension built successfully: $(LOADER_DIR)/zypher.so"
+loader: prepare_loader
+	@if [ ! -f $(LOADER_SO) ] || [ -n "$$(find $(LOADER_DIR) -name "*.c" -o -name "*.h" -newer $(LOADER_SO) 2>/dev/null)" ] || [ -n "$$(find $(INCLUDE_DIR) -name "*.h" -newer $(LOADER_SO) 2>/dev/null)" ]; then \
+		echo "Building PHP extension loader..."; \
+		cd $(LOADER_DIR) && \
+		$(PHPIZE) && \
+		./configure --with-php-config=$(PHP_CONFIG) --with-openssl=/usr/local/opt/openssl && \
+		make CFLAGS="$(CFLAGS) -I$(INCLUDE_DIR)" && \
+		cp modules/zypher.so .; \
+		echo "PHP extension built successfully: $(LOADER_DIR)/zypher.so"; \
+	else \
+		echo "Loader is up-to-date, skipping build."; \
+	fi
 
 # Build a debug version of the loader with extra diagnostics
 debug_loader: prepare_loader reset_loader
@@ -124,15 +132,30 @@ install: $(LOADER_DIR)/zypher.so
 test_file:
 	@mkdir -p $(TEST_DIR)
 	@echo "Creating test PHP files..."
-	@echo "<?php\n/**\n * Zypher Test Class\n */\nclass ZypherTest {\n    private \$$message;\n    \n    public function __construct(\$$message = 'Hello from Zypher!') {\n        \$$this->message = \$$message;\n    }\n    \n    public function getMessage() {\n        return \$$this->message;\n    }\n    \n    public function getEncodeTime() {\n        return date('Y-m-d H:i:s');\n    }\n}\n\n\$$test = new ZypherTest();\necho \"Message: \" . \$$test->getMessage() . \"\\n\";\necho \"Time: \" . \$$test->getEncodeTime() . \"\\n\";\n?>" > $(TEST_DIR)/test.php
+	@echo "<?php\n/**\n * Zypher Test Class\n */\nclass ZypherTest {\n    private \$message;\n    \n    public function __construct(\$message = 'Hello from Zypher!') {\n        \$this->message = \$message;\n    }\n    \n    public function getMessage() {\n        return \$this->message;\n    }\n    \n    public function getEncodeTime() {\n        return date('Y-m-d H:i:s');\n    }\n}\n\n\$test = new ZypherTest();\necho \"Message: \" . \$test->getMessage() . \"\\n\";\necho \"Time: \" . \$test->getEncodeTime() . \"\\n\";\n?>" > $(TEST_DIR)/test.php
 	@echo "Test PHP file created at $(TEST_DIR)/test.php"
 
 # Test encode and decode process
-test: encoder loader test_file
-	@echo "Testing Zypher encoding and loading..."
+test:
+	@echo "Running Zypher test suite..."
+	@chmod +x $(TEST_DIR)/run.sh
+	@cd $(TEST_DIR) && ./run.sh
+	@echo "Test suite completed"
+
+# Basic quick test for development purposes
+quick_test: encoder loader test_file
+	@echo "Running quick test for Zypher..."
 	@$(ENCODER_BIN) -o $(TEST_DIR)/test.encoded.php $(TEST_DIR)/test.php
 	@echo "\nTesting execution of encoded file..."
 	@$(PHP_BINARY) -d extension=$(LOADER_DIR)/zypher.so $(TEST_DIR)/test.encoded.php
+
+# Check PHP CLI and system dependencies
+check_php:
+	@echo "Checking PHP CLI environment for encoder..."
+	@which php || echo "ERROR: PHP CLI not found in PATH"
+	@php -v || echo "ERROR: PHP CLI not executable"
+	@php -m | grep -E 'openssl|opcache' || echo "WARNING: PHP CLI missing required extensions (openssl, opcache)"
+	@php -r "if(!function_exists('opcache_compile_file')) echo 'ERROR: PHP opcache extension not loaded or opcache_compile_file() unavailable';"
 
 # Clean build files
 clean:
@@ -167,4 +190,4 @@ info:
 	@if [ -f $(LOADER_DIR)/zypher.so ]; then echo "Loader Extension: EXISTS"; else echo "Loader Extension: NOT BUILT"; fi
 	@echo "=============================="
 
-.PHONY: all directories master_key prepare_loader reset_loader encoder loader debug_loader install test_file test clean distclean info
+.PHONY: all directories master_key prepare_loader reset_loader encoder loader debug_loader install test_file test quick_test clean distclean info check_php

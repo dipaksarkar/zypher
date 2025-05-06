@@ -22,7 +22,14 @@
 
 #include "php.h"
 #include "Zend/zend_compile.h"
+#include "ext/standard/md5.h"
+#include "ext/standard/base64.h"
+#include "ext/standard/php_var.h"
 #include "php_zypher.h"
+#include "../include/zypher_loader.h"
+#include "../include/zypher_common.h"
+#include "include/zypher_utils.h"
+#include <openssl/evp.h>
 #include <libgen.h>
 
 /* Custom zend_compile_file function to handle encoded files */
@@ -113,7 +120,7 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
         memset(&metadata, 0, sizeof(metadata));
 
         /* Extract metadata first to determine format type */
-        if (extract_file_metadata(buffer, buffer_len, &metadata) != ZYPHER_ERR_NONE)
+        if (extract_file_metadata(buffer, buffer_len, &metadata) != ZYPHER_ERROR_NONE)
         {
             if (DEBUG)
                 php_printf("DEBUG: Failed to extract metadata\n");
@@ -147,14 +154,10 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
         if (DEBUG)
             php_printf("DEBUG: Processing opcodes from decoded content\n");
 
-        /* Create a filename zend_string */
-        zend_string *zs_filename = zend_string_init(filename, strlen(filename), 0);
-
         /* Process the decoded opcodes */
-        op_array = process_opcodes(decoded, decoded_len, zs_filename);
+        op_array = zypher_load_opcodes(decoded, filename);
 
         /* Clean up */
-        zend_string_release(zs_filename);
         efree(decoded);
 
         if (!op_array)
@@ -181,123 +184,185 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
     return original_compile_file(file_handle, type);
 }
 
-/* Load opcodes from deserialized data into a new op_array */
-zend_op_array *zypher_load_opcodes(zval *opcodes, zend_string *filename)
+/* Load opcodes from decoded data */
+zend_op_array *zypher_load_opcodes(const char *decoded_data, const char *filename)
 {
-    if (!opcodes || Z_TYPE_P(opcodes) != IS_ARRAY)
+    zend_op_array *op_array = NULL;
+    char *source_code = NULL;
+    char *source_hint = NULL;
+    char *namespace = NULL;
+    char *classname = NULL;
+    zval data_zval;
+
+    /* Extract the MD5 hash (first 32 bytes) and the base64-encoded serialized data */
+    const char *md5_hash = decoded_data;
+    const char *base64_data = decoded_data + 32;
+
+    /* Calculate MD5 of the base64 data for verification */
+    char calculated_md5[33];
+    unsigned char digest[16];
+
+    /* Use EVP for MD5 calculation instead of PHP_MD5 functions */
+    EVP_MD_CTX *mdctx;
+    unsigned int md_len;
+
+    mdctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(mdctx, EVP_md5(), NULL);
+    EVP_DigestUpdate(mdctx, (unsigned char *)base64_data, strlen(base64_data));
+    EVP_DigestFinal_ex(mdctx, digest, &md_len);
+    EVP_MD_CTX_free(mdctx);
+
+    for (int i = 0; i < 16; i++)
     {
-        if (DEBUG)
-            php_printf("DEBUG: Invalid opcode data format\n");
+        sprintf(&calculated_md5[i * 2], "%02x", digest[i]);
+    }
+    calculated_md5[32] = '\0';
+
+    /* Verify MD5 hash */
+    if (strncmp(md5_hash, calculated_md5, 32) != 0)
+    {
+        php_error_docref(NULL, E_WARNING, "Zypher: Checksum verification failed for %s", filename);
         return NULL;
     }
 
-    if (DEBUG)
+    /* Decode base64 using our own utility function */
+    size_t decoded_len;
+    unsigned char *serialized_data = base64_decode(base64_data, strlen(base64_data), &decoded_len);
+
+    if (!serialized_data || decoded_len == 0)
     {
-        php_printf("DEBUG: Loading opcodes for %s\n", ZSTR_VAL(filename));
-    }
-
-    /* Create a temporary file with PHP code to compile safely */
-    char temp_filename[MAXPATHLEN];
-    char *temp_dir = getenv("TMPDIR");
-    if (!temp_dir)
-        temp_dir = "/tmp";
-
-    /* Create a unique filename to avoid collisions */
-    char unique_id[16];
-    snprintf(unique_id, sizeof(unique_id), "%08X", rand());
-    snprintf(temp_filename, MAXPATHLEN, "%s/zypher_temp_%s.php", temp_dir, unique_id);
-
-    /* Extract source hint from the opcodes if available */
-    zval *source_hint = zend_hash_str_find(Z_ARRVAL_P(opcodes), "source_hint", sizeof("source_hint") - 1);
-    zval *original_file = zend_hash_str_find(Z_ARRVAL_P(opcodes), "filename", sizeof("filename") - 1);
-
-    /* Try to get the package/class info for better context */
-    zval *namespace_val = zend_hash_str_find(Z_ARRVAL_P(opcodes), "namespace", sizeof("namespace") - 1);
-    zval *classname_val = zend_hash_str_find(Z_ARRVAL_P(opcodes), "classname", sizeof("classname") - 1);
-
-    /* Generate PHP file with minimal stub code */
-    FILE *fp = fopen(temp_filename, "w");
-    if (!fp)
-    {
-        if (DEBUG)
-            php_printf("DEBUG: Failed to create temporary file for opcode loading\n");
+        php_error_docref(NULL, E_WARNING, "Zypher: Failed to decode base64 data for %s", filename);
         return NULL;
     }
 
-    /* Start with PHP tag */
-    fprintf(fp, "<?php\n");
+    /* Unserialize the PHP array data */
+    ZVAL_NULL(&data_zval);
 
-    /* Add namespace if available */
-    if (namespace_val && Z_TYPE_P(namespace_val) == IS_STRING && Z_STRLEN_P(namespace_val) > 0)
+    /* PHP 8.x compatible unserialization - direct use of php_var_unserialize */
+    const unsigned char *p = serialized_data;
+    const unsigned char *end = p + decoded_len;
+
+    if (!php_var_unserialize(&data_zval, &p, end, NULL))
     {
-        fprintf(fp, "namespace %s;\n\n", Z_STRVAL_P(namespace_val));
+        efree(serialized_data);
+        php_error_docref(NULL, E_WARNING, "Zypher: Failed to unserialize data for %s", filename);
+        return NULL;
     }
 
-    /* Add some basic code to ensure the script compiles and runs */
-    if (source_hint && Z_TYPE_P(source_hint) == IS_STRING && Z_STRLEN_P(source_hint) > 0)
+    /* Process the array data */
+    HashTable *data_ht;
+    zval *contents_zval, *source_hint_zval = NULL;
+    zval *namespace_zval = NULL, *classname_zval = NULL;
+
+    if (Z_TYPE(data_zval) == IS_ARRAY && (data_ht = Z_ARRVAL(data_zval)))
     {
-        /* Use the source hint if provided */
-        fprintf(fp, "%s", Z_STRVAL_P(source_hint));
+        /* Extract contents and metadata */
+        if ((contents_zval = zend_hash_str_find(data_ht, "contents", sizeof("contents") - 1)) != NULL &&
+            Z_TYPE_P(contents_zval) == IS_STRING)
+        {
+            source_code = estrndup(Z_STRVAL_P(contents_zval), Z_STRLEN_P(contents_zval));
+        }
+
+        /* Get source_hint (full source code for reconstruction) */
+        if ((source_hint_zval = zend_hash_str_find(data_ht, "source_hint", sizeof("source_hint") - 1)) != NULL &&
+            Z_TYPE_P(source_hint_zval) == IS_STRING)
+        {
+            source_hint = estrndup(Z_STRVAL_P(source_hint_zval), Z_STRLEN_P(source_hint_zval));
+        }
+
+        /* Get namespace */
+        if ((namespace_zval = zend_hash_str_find(data_ht, "namespace", sizeof("namespace") - 1)) != NULL &&
+            Z_TYPE_P(namespace_zval) == IS_STRING)
+        {
+            namespace = estrndup(Z_STRVAL_P(namespace_zval), Z_STRLEN_P(namespace_zval));
+        }
+
+        /* Get classname */
+        if ((classname_zval = zend_hash_str_find(data_ht, "classname", sizeof("classname") - 1)) != NULL &&
+            Z_TYPE_P(classname_zval) == IS_STRING)
+        {
+            classname = estrndup(Z_STRVAL_P(classname_zval), Z_STRLEN_P(classname_zval));
+        }
+    }
+
+    /* Free the serialized data */
+    efree(serialized_data);
+
+    /* Check if we have the source code */
+    if (!source_code)
+    {
+        zval_ptr_dtor(&data_zval);
+        php_error_docref(NULL, E_WARNING, "Zypher: Failed to extract source code for %s", filename);
+        return NULL;
+    }
+
+    /* Create a zend_string for the filename */
+    zend_string *zs_filename = zend_string_init(filename, strlen(filename), 0);
+
+    /* Use the enhanced source_hint (complete source code) if available */
+    if (source_hint && strlen(source_hint) > 0)
+    {
+        /* Create a zend_string for the source code */
+        zend_string *zs_source = zend_string_init(source_hint, strlen(source_hint), 0);
+
+        /* Directly compile the complete source code with proper API parameter */
+        op_array = compile_string(zs_source, filename, ZEND_COMPILE_POSITION_AT_OPEN_TAG);
+
+        zend_string_release(zs_source);
+
+        if (op_array)
+        {
+#if PHP_VERSION_ID >= 70300
+            op_array->filename = zend_string_copy(zs_filename);
+#else
+            op_array->filename = estrndup(filename, strlen(filename));
+#endif
+        }
     }
     else
     {
-        /* Create a simple stub based on available metadata */
-        const char *orig_file = (original_file && Z_TYPE_P(original_file) == IS_STRING) ? Z_STRVAL_P(original_file) : ZSTR_VAL(filename);
+        /* Fallback to the original source code */
+        zend_string *zs_source = zend_string_init(source_code, strlen(source_code), 0);
 
-        /* If we have a class name, generate a compatible class stub */
-        if (classname_val && Z_TYPE_P(classname_val) == IS_STRING && Z_STRLEN_P(classname_val) > 0)
+        /* Call compile_string with proper parameters */
+        op_array = compile_string(zs_source, filename, ZEND_COMPILE_POSITION_AT_OPEN_TAG);
+
+        zend_string_release(zs_source);
+
+        if (op_array)
         {
-            fprintf(fp, "class %s {\n", Z_STRVAL_P(classname_val));
-            fprintf(fp, "    public static function __zypher_placeholder() {\n");
-            fprintf(fp, "        return ['file' => '%s', 'time' => %ld];\n",
-                    orig_file, (long)time(NULL));
-            fprintf(fp, "    }\n}\n");
-        }
-        else
-        {
-            /* Simple return value function */
-            fprintf(fp, "return (object)[\n");
-            fprintf(fp, "    'zypher_loader' => true,\n");
-            fprintf(fp, "    'file' => '%s',\n", orig_file);
-            fprintf(fp, "    'timestamp' => %ld\n", (long)time(NULL));
-            fprintf(fp, "];\n");
+#if PHP_VERSION_ID >= 70300
+            op_array->filename = zend_string_copy(zs_filename);
+#else
+            op_array->filename = estrndup(filename, strlen(filename));
+#endif
         }
     }
 
-    fclose(fp);
+    /* Release the filename string */
+    zend_string_release(zs_filename);
 
-    if (DEBUG)
-        php_printf("DEBUG: Created temporary PHP file: %s\n", temp_filename);
+    /* Add debug info if available */
+    if (op_array && namespace && classname)
+    {
+        /* For debugging: printf("Loaded class %s in namespace %s from %s\n", classname, namespace, filename); */
+    }
 
-    /* Compile using the original compiler */
-    zend_file_handle file_handle;
-    memset(&file_handle, 0, sizeof(file_handle));
-    file_handle.type = ZEND_HANDLE_FILENAME;
-    file_handle.filename = zend_string_init(temp_filename, strlen(temp_filename), 0);
-    file_handle.opened_path = NULL;
-
-    /* Use ZEND_INCLUDE to compile without executing */
-    zend_op_array *op_array = original_compile_file(&file_handle, ZEND_INCLUDE);
-
-    /* Clean up file handle */
-    zend_string_release(file_handle.filename);
-
-    /* Clean up temporary file */
-    unlink(temp_filename);
+    /* Free allocated memory */
+    if (source_code)
+        efree(source_code);
+    if (source_hint)
+        efree(source_hint);
+    if (namespace)
+        efree(namespace);
+    if (classname)
+        efree(classname);
+    zval_ptr_dtor(&data_zval);
 
     if (!op_array)
     {
-        if (DEBUG)
-            php_printf("DEBUG: Failed to compile PHP stub for opcodes\n");
-        return NULL;
+        php_error_docref(NULL, E_WARNING, "Zypher: Failed to compile source for %s", filename);
     }
-
-    /* Replace the filename to match the original */
-    zend_string_release(op_array->filename);
-    op_array->filename = zend_string_copy(filename);
-
-    if (DEBUG)
-        php_printf("DEBUG: Successfully compiled opcodes for %s\n", ZSTR_VAL(filename));
 
     return op_array;
 }

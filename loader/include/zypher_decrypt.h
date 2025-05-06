@@ -13,12 +13,6 @@
 #include "php.h"
 #include "../../include/zypher_loader.h"
 
-/* Define constants for decryption */
-#define IV_LENGTH 16
-#define BYTE_ROTATION_OFFSET 7
-
-/* We use the zypher_file_metadata structure already defined in zypher_loader.h */
-
 /* Read and decrypt file content */
 char *decrypt_file_content(const char *encoded_content, size_t encoded_length,
                            const char *master_key, const char *filename,

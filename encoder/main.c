@@ -1,25 +1,69 @@
 /**
- * Zypher PHP Encoder - Entry point
- * Compiles PHP code to opcodes, encrypts them, and saves to a .php file.
+ * Zypher PHP Encoder - Main entry point
+ * Handles command line arguments and coordinates the encoding process
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <getopt.h>
-#include <time.h>
-#include <sapi/embed/php_embed.h>
+#include <libgen.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <stdarg.h>
 
+/* Common headers */
 #include "../include/zypher_encoder.h"
-#include "../build/zypher_master_key.h"
+#include "../include/zypher_common.h"
+
+/* Debug and error reporting functions */
+void print_debug(const char *format, ...);
+void print_error(const char *format, ...);
+
+/* Forward declarations */
+int encode_php_file(const zypher_encoder_options *options);
+int zypher_encoder_init();
+void zypher_encoder_shutdown();
 
 /* Global debug flag */
-int g_debug = 0;
+int g_debug_mode = 0;
 
-/* Print a debug message if debug is enabled */
+/* Print usage information */
+void print_usage(const char *progname)
+{
+    printf("Zypher PHP Encoder v%s\n", ZYPHER_VERSION);
+    printf("Usage: %s [options] input.php [output.php]\n\n", progname);
+    printf("Options:\n");
+    printf("  -h, --help               Display this help message\n");
+    printf("  -v, --version            Display version information\n");
+    printf("  -d, --debug              Enable debug output\n");
+    printf("  -o, --output <file>      Specify output filename (default: input.encoded.php)\n");
+    printf("  -e, --expire <timestamp> Set expiry timestamp (Unix timestamp)\n");
+    printf("  --expire-days <days>     Set expiry in days from now\n");
+    printf("  -D, --domain <domain>    Restrict execution to specified domain\n");
+    printf("  -i, --iterations <num>   Set key derivation iterations (default: 5000)\n");
+    printf("  --obfuscate              Enable byte rotation obfuscation\n");
+    printf("  --no-phpinfo             Block phpinfo() in encoded files\n");
+    printf("  --anti-debug             Enable anti-debugging features\n");
+    printf("\nExample:\n");
+    printf("  %s -o output.php --domain example.com --expire-days 30 input.php\n\n", progname);
+    printf("  This will encode input.php to output.php, restricted to example.com domain\n");
+    printf("  and will expire in 30 days.\n");
+}
+
+/* Print version information */
+void print_version()
+{
+    printf("Zypher PHP Encoder v%s\n", ZYPHER_VERSION);
+    printf("Copyright (c) 2025 Zypher Team\n");
+    printf("Build: %s %s\n", __DATE__, __TIME__);
+}
+
+/* Print debug message */
 void print_debug(const char *format, ...)
 {
-    if (!g_debug)
+    if (!g_debug_mode)
         return;
 
     va_list args;
@@ -30,7 +74,7 @@ void print_debug(const char *format, ...)
     va_end(args);
 }
 
-/* Print an error message */
+/* Print error message */
 void print_error(const char *format, ...)
 {
     va_list args;
@@ -41,200 +85,174 @@ void print_error(const char *format, ...)
     va_end(args);
 }
 
-/* Show help information */
-void show_help()
+/* Check if file exists */
+int file_exists(const char *filename)
 {
-    printf("%s\n\n", ZYPHER_BANNER);
-    printf("Usage: zypher [options] input.php [output.php]\n");
-    printf("\n");
-    printf("Options:\n");
-    printf("  -h, --help                 Display this help message\n");
-    printf("  -o, --output FILE          Output file (default is input.encoded.php)\n");
-    printf("  -d, --debug                Enable debug output\n");
-    printf("  -b, --obfuscate            Enable additional opcode obfuscation\n");
-    printf("  -e, --expire TIMESTAMP     Set expiration timestamp (0=never)\n");
-    printf("  -l, --license DOMAIN       Lock encoded file to domain name\n");
-    printf("  -i, --iterations COUNT     Key derivation iterations (default: 1000)\n");
-    printf("  -a, --allow-debugging      Allow debugging of encoded files\n");
-    printf("\n");
-    printf("Examples:\n");
-    printf("  zypher myfile.php\n");
-    printf("  zypher -o secured.php -l example.com -e 1735689600 myfile.php\n");
+    struct stat st;
+    return stat(filename, &st) == 0;
 }
 
-/* Parse command line options */
-int parse_options(int argc, char **argv, zypher_encoder_options *options)
+/* Main entry point */
+int main(int argc, char *argv[])
 {
     int c;
     int option_index = 0;
+    zypher_encoder_options options;
+    char *input_file = NULL;
+    char *output_file = NULL;
+    int expire_days = 0;
+    int result = EXIT_FAILURE;
 
-    /* Set defaults */
-    memset(options, 0, sizeof(zypher_encoder_options));
-    options->iteration_count = 1000; /* Default iterations for key derivation */
+    /* Initialize options with defaults */
+    memset(&options, 0, sizeof(options));
+    options.iteration_count = DEFAULT_ITERATION_COUNT;
 
+    /* Define long options */
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
-        {"output", required_argument, 0, 'o'},
+        {"version", no_argument, 0, 'v'},
         {"debug", no_argument, 0, 'd'},
-        {"obfuscate", no_argument, 0, 'b'},
+        {"output", required_argument, 0, 'o'},
         {"expire", required_argument, 0, 'e'},
-        {"license", required_argument, 0, 'l'},
+        {"expire-days", required_argument, 0, 1},
+        {"domain", required_argument, 0, 'D'},
         {"iterations", required_argument, 0, 'i'},
-        {"allow-debugging", no_argument, 0, 'a'},
+        {"obfuscate", no_argument, 0, 2},
+        {"no-phpinfo", no_argument, 0, 3},
+        {"anti-debug", no_argument, 0, 4},
         {0, 0, 0, 0}};
 
-    while ((c = getopt_long(argc, argv, "ho:dbe:l:i:a", long_options, &option_index)) != -1)
+    /* Parse command line options */
+    while ((c = getopt_long(argc, argv, "hvo:e:D:di:", long_options, &option_index)) != -1)
     {
         switch (c)
         {
         case 'h':
-            show_help();
-            return 0;
-
-        case 'o':
-            options->output_file = strdup(optarg);
-            break;
-
+            print_usage(basename(argv[0]));
+            return EXIT_SUCCESS;
+        case 'v':
+            print_version();
+            return EXIT_SUCCESS;
         case 'd':
-            options->debug = 1;
-            g_debug = 1;
+            g_debug_mode = 1;
+            options.debug = 1;
             break;
-
-        case 'b':
-            options->obfuscate = 1;
+        case 'o':
+            output_file = optarg;
             break;
-
         case 'e':
-            options->expire_timestamp = atoi(optarg);
+            options.expire_timestamp = atoi(optarg);
             break;
-
-        case 'l':
-            options->domain_lock = strdup(optarg);
+        case 'D':
+            options.domain_lock = optarg;
             break;
-
         case 'i':
-            options->iteration_count = atoi(optarg);
-            if (options->iteration_count < 100 || options->iteration_count > 10000)
+            options.iteration_count = atoi(optarg);
+            if (options.iteration_count < 1000)
             {
-                print_error("Iteration count must be between 100 and 10000");
-                return 0;
+                print_error("Iteration count must be at least 1000");
+                return EXIT_FAILURE;
             }
             break;
-
-        case 'a':
-            options->allow_debugging = 1;
+        case 1: /* --expire-days */
+            expire_days = atoi(optarg);
+            if (expire_days > 0)
+            {
+                options.expire_timestamp = time(NULL) + (expire_days * 86400); /* Convert days to seconds */
+            }
             break;
-
-        case '?':
-            return 0;
+        case 2: /* --obfuscate */
+            options.obfuscate = 1;
+            break;
+        case 3: /* --no-phpinfo */
+            options.disable_phpinfo = 1;
+            break;
+        case 4: /* --anti-debug */
+            options.anti_debug = 1;
+            break;
+        default:
+            print_usage(basename(argv[0]));
+            return EXIT_FAILURE;
         }
     }
 
-    /* Must have at least one non-option argument (input file) */
-    if (optind >= argc)
+    /* Get input file */
+    if (optind < argc)
+    {
+        input_file = argv[optind++];
+        /* If output file not specified but we have another argument, treat it as output file */
+        if (!output_file && optind < argc)
+        {
+            output_file = argv[optind++];
+        }
+    }
+    else
     {
         print_error("No input file specified");
-        return 0;
+        print_usage(basename(argv[0]));
+        return EXIT_FAILURE;
     }
 
-    /* Get the input file - required */
-    options->input_file = strdup(argv[optind]);
-
-    /* Set default output file if not specified */
-    if (!options->output_file)
+    /* Check if input file exists */
+    if (!file_exists(input_file))
     {
-        /* Use input filename + .encoded.php if no output specified */
-        char *output = (char *)malloc(strlen(options->input_file) + 20);
-        strcpy(output, options->input_file);
+        print_error("Input file does not exist: %s", input_file);
+        return EXIT_FAILURE;
+    }
 
-        /* Remove .php extension if present */
-        char *ext = strrchr(output, '.');
-        if (ext && strcmp(ext, ".php") == 0)
+    /* Generate default output filename if not specified */
+    char default_output[4096] = {0};
+    if (!output_file)
+    {
+        char *input_basename = basename(strdup(input_file));
+        char *dot = strrchr(input_basename, '.');
+        if (dot)
         {
-            *ext = '\0';
+            *dot = '\0';
         }
-
-        /* Add encoded extension */
-        strcat(output, ".encoded.php");
-        options->output_file = output;
+        snprintf(default_output, sizeof(default_output), "%s.encoded.php", input_basename);
+        output_file = default_output;
+        free(input_basename);
     }
 
-    /* Debug output */
-    if (options->debug)
-    {
-        print_debug("Input file: %s", options->input_file);
-        print_debug("Output file: %s", options->output_file);
-        print_debug("Obfuscation: %s", options->obfuscate ? "enabled" : "disabled");
-        print_debug("Expire timestamp: %d", options->expire_timestamp);
-        print_debug("Domain lock: %s", options->domain_lock ? options->domain_lock : "none");
-        print_debug("Iteration count: %d", options->iteration_count);
-        print_debug("Allow debugging: %s", options->allow_debugging ? "yes" : "no");
-    }
-
-    return 1;
-}
-
-/* Free resources allocated for options */
-void free_options(zypher_encoder_options *options)
-{
-    if (options->input_file)
-        free(options->input_file);
-    if (options->output_file)
-        free(options->output_file);
-    if (options->domain_lock)
-        free(options->domain_lock);
-}
-
-/* Entry point */
-int main(int argc, char **argv)
-{
-    int result;
-    zypher_encoder_options options;
-
-    /* Display banner */
-    printf("%s\n", ZYPHER_BANNER);
-
-    /* Parse command-line options */
-    if (!parse_options(argc, argv, &options))
-    {
-        show_help();
-        return 1;
-    }
-
-/* Check if master key is available */
-#ifndef ZYPHER_MASTER_KEY
-    print_error("Master encryption key not found. Please run 'make master_key' first.");
-    return 1;
-#endif
-
-    /* Initialize PHP embedded interpreter */
-    php_embed_init(0, NULL);
+    /* Set options */
+    options.input_file = input_file;
+    options.output_file = output_file;
 
     /* Initialize encoder */
     if (!zypher_encoder_init())
     {
         print_error("Failed to initialize encoder");
-        php_embed_shutdown();
-        return 1;
+        return EXIT_FAILURE;
     }
 
-    /* Encode the PHP file */
-    result = encode_php_file(&options);
-
-    /* Cleanup */
-    zypher_encoder_shutdown();
-    php_embed_shutdown();
-    free_options(&options);
-
-    if (result)
+    /* Encode the file */
+    printf("Encoding %s to %s\n", input_file, output_file);
+    if (options.domain_lock)
     {
-        printf("\nEncoding successful!\n");
-        printf("Output file: %s\n", options.output_file);
+        printf("Domain lock: %s\n", options.domain_lock);
+    }
+    if (options.expire_timestamp)
+    {
+        char expire_date[64];
+        struct tm *tm_info = localtime(&(time_t){options.expire_timestamp});
+        strftime(expire_date, sizeof(expire_date), "%Y-%m-%d %H:%M:%S", tm_info);
+        printf("Expiry date: %s\n", expire_date);
+    }
+
+    /* Do the encoding */
+    if (encode_php_file(&options))
+    {
+        printf("Encoding successful. Output written to %s\n", output_file);
+        result = EXIT_SUCCESS;
     }
     else
     {
-        printf("\nEncoding failed.\n");
+        print_error("Encoding failed");
     }
 
-    return result ? 0 : 1;
+    /* Cleanup */
+    zypher_encoder_shutdown();
+
+    return result;
 }

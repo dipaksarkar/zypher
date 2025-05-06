@@ -75,6 +75,14 @@ zypher_compile.lo: /Volumes/Work/zypher/loader/zypher_compile.c \
   /usr/local/Cellar/php@8.3/8.3.19_1/include/php/TSRM/TSRM.h \
   /usr/local/Cellar/php@8.3/8.3.19_1/include/php/Zend/zend_constants.h \
   /usr/local/Cellar/php@8.3/8.3.19_1/include/php/main/php_reentrancy.h \
+  /usr/local/Cellar/php@8.3/8.3.19_1/include/php/ext/standard/md5.h \
+  /usr/local/Cellar/php@8.3/8.3.19_1/include/php/ext/standard/basic_functions.h \
+  /usr/local/Cellar/php@8.3/8.3.19_1/include/php/ext/standard/php_filestat.h \
+  /usr/local/Cellar/php@8.3/8.3.19_1/include/php/Zend/zend_highlight.h \
+  /usr/local/Cellar/php@8.3/8.3.19_1/include/php/ext/standard/url_scanner_ex.h \
+  /usr/local/Cellar/php@8.3/8.3.19_1/include/php/ext/random/php_random.h \
+  /usr/local/Cellar/php@8.3/8.3.19_1/include/php/ext/standard/base64.h \
+  /usr/local/Cellar/php@8.3/8.3.19_1/include/php/ext/standard/php_var.h \
   /Volumes/Work/zypher/loader/php_zypher.h \
   /Volumes/Work/zypher/loader/../build/zypher_master_key.h \
   /Volumes/Work/zypher/loader/../include/zypher_common.h \

@@ -67,3 +67,5 @@ core.*
 
 # Build system output files
 compile_commands.json
+
+/tests/*.out
