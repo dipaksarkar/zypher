@@ -206,59 +206,87 @@ zend_op_array *zypher_load_opcodes(zval *opcodes, zend_string *filename)
         php_printf("DEBUG: Loading opcodes for %s\n", ZSTR_VAL(filename));
     }
 
-    /* In PHP 8.3, we'll use a simplified approach that creates a valid PHP script
-       then uses the original compile function to compile it properly, avoiding
-       the complexities and potential crashes of manual opcode creation */
-
-    /* Create a temporary file to compile */
+    /* Create a temporary file with PHP code to compile safely */
     char temp_filename[MAXPATHLEN];
     char *temp_dir = getenv("TMPDIR");
     if (!temp_dir)
         temp_dir = "/tmp";
 
-    snprintf(temp_filename, MAXPATHLEN, "%s/zypher_temp_opcode_%d.php", temp_dir, (int)time(NULL));
+    /* Create a unique filename to avoid collisions */
+    char unique_id[16];
+    snprintf(unique_id, sizeof(unique_id), "%08X", rand());
+    snprintf(temp_filename, MAXPATHLEN, "%s/zypher_temp_%s.php", temp_dir, unique_id);
 
-    /* Extract any source code hints from the opcodes if available */
+    /* Extract source hint from the opcodes if available */
     zval *source_hint = zend_hash_str_find(Z_ARRVAL_P(opcodes), "source_hint", sizeof("source_hint") - 1);
-    zval *stub_code = zend_hash_str_find(Z_ARRVAL_P(opcodes), "stub", sizeof("stub") - 1);
+    zval *original_file = zend_hash_str_find(Z_ARRVAL_P(opcodes), "filename", sizeof("filename") - 1);
 
-    /* Generate PHP file content */
+    /* Try to get the package/class info for better context */
+    zval *namespace_val = zend_hash_str_find(Z_ARRVAL_P(opcodes), "namespace", sizeof("namespace") - 1);
+    zval *classname_val = zend_hash_str_find(Z_ARRVAL_P(opcodes), "classname", sizeof("classname") - 1);
+
+    /* Generate PHP file with minimal stub code */
     FILE *fp = fopen(temp_filename, "w");
     if (!fp)
     {
         if (DEBUG)
-            php_printf("DEBUG: Failed to create temporary file\n");
+            php_printf("DEBUG: Failed to create temporary file for opcode loading\n");
         return NULL;
     }
 
-    if (source_hint && Z_TYPE_P(source_hint) == IS_STRING)
+    /* Start with PHP tag */
+    fprintf(fp, "<?php\n");
+
+    /* Add namespace if available */
+    if (namespace_val && Z_TYPE_P(namespace_val) == IS_STRING && Z_STRLEN_P(namespace_val) > 0)
     {
-        /* Use the provided source hint */
-        fprintf(fp, "%s", Z_STRVAL_P(source_hint));
+        fprintf(fp, "namespace %s;\n\n", Z_STRVAL_P(namespace_val));
     }
-    else if (stub_code && Z_TYPE_P(stub_code) == IS_STRING)
+
+    /* Add some basic code to ensure the script compiles and runs */
+    if (source_hint && Z_TYPE_P(source_hint) == IS_STRING && Z_STRLEN_P(source_hint) > 0)
     {
-        /* Use any stub code provided */
-        fprintf(fp, "%s", Z_STRVAL_P(stub_code));
+        /* Use the source hint if provided */
+        fprintf(fp, "%s", Z_STRVAL_P(source_hint));
     }
     else
     {
-        /* Use a simple stub that returns an object with basic information */
-        fprintf(fp, "<?php\nreturn (object)['zypher_loader' => true, 'file' => '%s', 'timestamp' => %ld];\n",
-                ZSTR_VAL(filename), (long)time(NULL));
+        /* Create a simple stub based on available metadata */
+        const char *orig_file = (original_file && Z_TYPE_P(original_file) == IS_STRING) ? Z_STRVAL_P(original_file) : ZSTR_VAL(filename);
+
+        /* If we have a class name, generate a compatible class stub */
+        if (classname_val && Z_TYPE_P(classname_val) == IS_STRING && Z_STRLEN_P(classname_val) > 0)
+        {
+            fprintf(fp, "class %s {\n", Z_STRVAL_P(classname_val));
+            fprintf(fp, "    public static function __zypher_placeholder() {\n");
+            fprintf(fp, "        return ['file' => '%s', 'time' => %ld];\n",
+                    orig_file, (long)time(NULL));
+            fprintf(fp, "    }\n}\n");
+        }
+        else
+        {
+            /* Simple return value function */
+            fprintf(fp, "return (object)[\n");
+            fprintf(fp, "    'zypher_loader' => true,\n");
+            fprintf(fp, "    'file' => '%s',\n", orig_file);
+            fprintf(fp, "    'timestamp' => %ld\n", (long)time(NULL));
+            fprintf(fp, "];\n");
+        }
     }
 
     fclose(fp);
 
+    if (DEBUG)
+        php_printf("DEBUG: Created temporary PHP file: %s\n", temp_filename);
+
     /* Compile using the original compiler */
     zend_file_handle file_handle;
     memset(&file_handle, 0, sizeof(file_handle));
-
-    /* Set up file handle for PHP 8.3 */
     file_handle.type = ZEND_HANDLE_FILENAME;
     file_handle.filename = zend_string_init(temp_filename, strlen(temp_filename), 0);
     file_handle.opened_path = NULL;
 
+    /* Use ZEND_INCLUDE to compile without executing */
     zend_op_array *op_array = original_compile_file(&file_handle, ZEND_INCLUDE);
 
     /* Clean up file handle */
@@ -270,11 +298,11 @@ zend_op_array *zypher_load_opcodes(zval *opcodes, zend_string *filename)
     if (!op_array)
     {
         if (DEBUG)
-            php_printf("DEBUG: Failed to compile opcodes\n");
+            php_printf("DEBUG: Failed to compile PHP stub for opcodes\n");
         return NULL;
     }
 
-    /* Update filename to match the original */
+    /* Replace the filename to match the original */
     zend_string_release(op_array->filename);
     op_array->filename = zend_string_copy(filename);
 
@@ -438,22 +466,52 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
             if (DEBUG)
                 php_printf("DEBUG: Processing source code format\n");
 
-            /* Create secure in-memory compilation */
-            char temp_file[MAXPATHLEN];
+            /* Use more robust error handling for temporary file creation */
+            char temp_file[MAXPATHLEN] = {0};
             char *temp_dir = getenv("TMPDIR");
             if (temp_dir == NULL)
             {
                 temp_dir = "/tmp";
             }
 
-            /* Create a unique filename based on timestamp and a random number */
-            snprintf(temp_file, sizeof(temp_file), "%s/zypher_temp_%d_%d.php",
-                     temp_dir, (int)time(NULL), rand());
+            /* Create a unique filename with proper error checking */
+            int temp_fd;
+
+            /* Generate a unique filename based on timestamp and a random number */
+            snprintf(temp_file, sizeof(temp_file), "%s/zypher_temp_XXXXXX.php", temp_dir);
+
+            /* Use mkstemp to create a unique file securely */
+            char *dot_pos = strrchr(temp_file, '.');
+            if (dot_pos)
+            {
+                *dot_pos = '\0'; /* Temporarily remove extension */
+                temp_fd = mkstemp(temp_file);
+                if (temp_fd != -1)
+                {
+                    char final_name[MAXPATHLEN];
+                    snprintf(final_name, sizeof(final_name), "%s.php", temp_file);
+                    close(temp_fd);
+                    unlink(temp_file);             /* Remove the file without extension */
+                    strcpy(temp_file, final_name); /* Use the name with extension */
+                }
+                else
+                {
+                    /* Fallback to old method if mkstemp fails */
+                    snprintf(temp_file, sizeof(temp_file), "%s/zypher_temp_%d_%d.php",
+                             temp_dir, (int)time(NULL), rand());
+                }
+            }
+            else
+            {
+                /* Fallback if dot not found */
+                snprintf(temp_file, sizeof(temp_file), "%s/zypher_temp_%d_%d.php",
+                         temp_dir, (int)time(NULL), rand());
+            }
 
             if (DEBUG)
                 php_printf("DEBUG: Using temporary file for secure compilation: %s\n", temp_file);
 
-            /* Write decoded content to temp file */
+            /* Write decoded content to temp file with proper error checking */
             FILE *tf = fopen(temp_file, "wb");
             if (!tf)
             {
@@ -473,8 +531,9 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
             memset(&temp_file_handle, 0, sizeof(zend_file_handle));
             temp_file_handle.type = ZEND_HANDLE_FILENAME;
             temp_file_handle.filename = zend_string_init(temp_file, strlen(temp_file), 0);
+            temp_file_handle.opened_path = NULL;
 
-            /* Compile using the original compiler */
+            /* Compile using the original compiler with proper error handling */
             op_array = original_compile_file(&temp_file_handle, type);
 
             /* Immediate secure cleanup */
@@ -486,6 +545,14 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
             /* Securely wipe sensitive data */
             memset(decoded, 0, decoded_len);
             efree(decoded);
+
+            /* Fix filenames in the op_array to match the original file */
+            if (op_array)
+            {
+                /* Only if compilation succeeded */
+                zend_string_release(op_array->filename);
+                op_array->filename = zend_string_init(filename, strlen(filename), 0);
+            }
 
             if (!op_array)
             {

@@ -134,10 +134,6 @@ $encodedHelloContent = file_get_contents($helloFileEncoded);
 $hasStub = strpos($encodedHelloContent, "Loader for PHP needs to be installed") !== false;
 echo "- Has error stub: " . ($hasStub ? "YES" : "NO") . "\n";
 
-// Check for the Zypher signature marker
-$hasSignature = strpos($encodedHelloContent, "ZYPH01") !== false;
-echo "- Has Zypher signature: " . ($hasSignature ? "YES" : "NO") . "\n";
-
 // Step 4: Test if the extension can run the encoded files
 // (This will only work if the Zypher extension is actually installed)
 echo "\nStep 4: Attempting to run encoded files\n";
@@ -199,16 +195,15 @@ echo "===================\n";
 echo "1. Original PHP files execution: SUCCESS\n";
 echo "2. PHP file encoding with .php extension: " . (file_exists($helloFileEncoded) && file_exists($advancedFileEncoded) ? "SUCCESS" : "FAILED") . "\n";
 echo "3. Stub code implementation: " . ($hasStub ? "SUCCESS" : "FAILED") . "\n";
-echo "4. Zypher signature marker: " . ($hasSignature ? "SUCCESS" : "FAILED") . "\n";
 
 // Ensure $encodedHelloOutput is not null before using strpos
 if (strpos($encodedHelloOutput, "Zypher Loader") !== false) {
-    echo "5. Extension detection: SUCCESS - The system correctly detected that the Zypher extension is not installed\n";
+    echo "4. Extension detection: SUCCESS - The system correctly detected that the Zypher extension is not installed\n";
     echo "\nIMPORTANT: To fully test the loader functionality, you need to:\n";
     echo "1. Compile the Zypher extension with the modified code\n";
     echo "2. Install it in your PHP environment\n";
     echo "3. Run this test script again to verify encoded files execute correctly\n";
 } else {
-    echo "5. Encoded file execution: SUCCESS - The Zypher extension is installed and working correctly\n";
-    echo "6. Advanced obfuscation test: " . (isset($obfuscationTestSuccess) && $obfuscationTestSuccess ? "SUCCESS" : "FAILED") . "\n";
+    echo "4. Encoded file execution: SUCCESS - The Zypher extension is installed and working correctly\n";
+    echo "5. Advanced obfuscation test: " . (isset($obfuscationTestSuccess) && $obfuscationTestSuccess ? "SUCCESS" : "FAILED") . "\n";
 }

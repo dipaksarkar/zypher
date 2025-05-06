@@ -712,14 +712,14 @@ zend_op_array *process_opcodes(char *opcode_data, size_t data_len, zend_string *
     if (!ZYPHER_G(opcode_cache))
     {
         ALLOC_HASHTABLE(ZYPHER_G(opcode_cache));
-        zend_hash_init(ZYPHER_G(opcode_cache), 64, NULL, ZVAL_PTR_DTOR, 0); /* Add proper destructor */
+        zend_hash_init(ZYPHER_G(opcode_cache), 64, NULL, ZVAL_PTR_DTOR, 0);
     }
 
     /* Check if this file has already been cached */
     zend_string *filename_key = zend_string_copy(filename);
     zval *cached_opcodes = zend_hash_find(ZYPHER_G(opcode_cache), filename_key);
 
-    if (cached_opcodes != NULL)
+    if (cached_opcodes != NULL && Z_TYPE_P(cached_opcodes) == IS_ARRAY)
     {
         if (DEBUG)
             php_printf("DEBUG: Found cached opcodes for %s\n", ZSTR_VAL(filename));
@@ -760,12 +760,16 @@ zend_op_array *process_opcodes(char *opcode_data, size_t data_len, zend_string *
     /* Create op_array from opcodes */
     zend_op_array *op_array = zypher_load_opcodes(&opcodes, filename);
 
+    /* Cache the opcodes if successful */
     if (op_array)
     {
-        /* Only cache if successful */
+        if (DEBUG)
+            php_printf("DEBUG: Caching opcodes for %s\n", ZSTR_VAL(filename));
+
+        /* Add to cache with proper reference counting */
         zval cached_zval;
         ZVAL_COPY(&cached_zval, &opcodes);
-        zend_hash_add(ZYPHER_G(opcode_cache), filename_key, &cached_zval);
+        zend_hash_update(ZYPHER_G(opcode_cache), filename_key, &cached_zval);
     }
 
     /* Clean up */
