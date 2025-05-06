@@ -4,7 +4,7 @@
 extern zend_module_entry zypher_module_entry;
 #define phpext_zypher_ptr &zypher_module_entry
 
-#define PHP_ZYPHER_VERSION "2.0.0"
+#define PHP_ZYPHER_VERSION "1.0.0"
 
 /* For compatibility with PHP thread safety */
 #ifdef ZTS
@@ -38,19 +38,17 @@ ZEND_END_MODULE_GLOBALS(zypher)
 
 /* Define a master key constant (used to decrypt per-file keys) */
 #define ZYPHER_MASTER_KEY "Zypher-Master-Key-X7pQ9r2s"
-#define ZYPHER_SIGNATURE "ZYPH02" // Updated to version 2
+#define ZYPHER_SIGNATURE "ZYPH01" // Version 1.0 signature
 #define SIGNATURE_LENGTH 6
 #define IV_LENGTH 16
 #define KEY_LENGTH 32
 #define MAX_KEY_ITERATIONS 5000
 
-/* File format versions */
-#define ZYPHER_FORMAT_VERSION_V1 1
-#define ZYPHER_FORMAT_VERSION_V2 2
+/* File format version */
+#define ZYPHER_FORMAT_VERSION 1
 
-/* Format types */
-#define ZYPHER_FORMAT_SOURCE 1
-#define ZYPHER_FORMAT_OPCODE 2
+/* Only one format type - opcode */
+#define ZYPHER_FORMAT_OPCODE 1
 
 /* Define security flags */
 #define ZYPHER_FLAG_EXPIRE 0x0001      /* Content has expiry date */

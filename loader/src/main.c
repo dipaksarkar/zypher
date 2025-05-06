@@ -430,151 +430,32 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
         if (DEBUG)
             php_printf("DEBUG: Successfully decrypted %zu bytes of content\n", decoded_len);
 
-        /* Check format type to determine how to handle the decoded content */
-        if (metadata.format_type == ZYPHER_FORMAT_OPCODE)
+        /* Process opcodes from decoded content */
+        if (DEBUG)
+            php_printf("DEBUG: Processing opcodes from decoded content\n");
+
+        /* Create a filename zend_string */
+        zend_string *zs_filename = zend_string_init(filename, strlen(filename), 0);
+
+        /* Process the decoded opcodes */
+        op_array = process_opcodes(decoded, decoded_len, zs_filename);
+
+        /* Clean up */
+        zend_string_release(zs_filename);
+        efree(decoded);
+
+        if (!op_array)
         {
-            /* Process opcodes - this is where we handle the new format */
             if (DEBUG)
-                php_printf("DEBUG: Processing opcodes from decoded content\n");
-
-            /* Create a filename zend_string */
-            zend_string *zs_filename = zend_string_init(filename, strlen(filename), 0);
-
-            /* Process the decoded opcodes */
-            op_array = process_opcodes(decoded, decoded_len, zs_filename);
-
-            /* Clean up */
-            zend_string_release(zs_filename);
-            efree(decoded);
-
-            if (!op_array)
-            {
-                if (DEBUG)
-                    php_printf("DEBUG: Failed to process opcodes, compilation failed\n");
-                php_error_docref(NULL, E_WARNING, "Failed to process opcodes for: %s", filename);
-                return NULL;
-            }
-
-            if (DEBUG)
-                php_printf("DEBUG: Successfully loaded opcodes for %s\n", filename);
-
-            return op_array;
+                php_printf("DEBUG: Failed to process opcodes, compilation failed\n");
+            php_error_docref(NULL, E_WARNING, "Failed to process opcodes for: %s", filename);
+            return NULL;
         }
-        else
-        {
-            /* Original source code format - use the existing method */
-            if (DEBUG)
-                php_printf("DEBUG: Processing source code format\n");
 
-            /* Use more robust error handling for temporary file creation */
-            char temp_file[MAXPATHLEN] = {0};
-            char *temp_dir = getenv("TMPDIR");
-            if (temp_dir == NULL)
-            {
-                temp_dir = "/tmp";
-            }
+        if (DEBUG)
+            php_printf("DEBUG: Successfully loaded opcodes for %s\n", filename);
 
-            /* Create a unique filename with proper error checking */
-            int temp_fd;
-
-            /* Generate a unique filename based on timestamp and a random number */
-            snprintf(temp_file, sizeof(temp_file), "%s/zypher_temp_XXXXXX.php", temp_dir);
-
-            /* Use mkstemp to create a unique file securely */
-            char *dot_pos = strrchr(temp_file, '.');
-            if (dot_pos)
-            {
-                *dot_pos = '\0'; /* Temporarily remove extension */
-                temp_fd = mkstemp(temp_file);
-                if (temp_fd != -1)
-                {
-                    char final_name[MAXPATHLEN];
-                    snprintf(final_name, sizeof(final_name), "%s.php", temp_file);
-                    close(temp_fd);
-                    unlink(temp_file);             /* Remove the file without extension */
-                    strcpy(temp_file, final_name); /* Use the name with extension */
-                }
-                else
-                {
-                    /* Fallback to old method if mkstemp fails */
-                    snprintf(temp_file, sizeof(temp_file), "%s/zypher_temp_%d_%d.php",
-                             temp_dir, (int)time(NULL), rand());
-                }
-            }
-            else
-            {
-                /* Fallback if dot not found */
-                snprintf(temp_file, sizeof(temp_file), "%s/zypher_temp_%d_%d.php",
-                         temp_dir, (int)time(NULL), rand());
-            }
-
-            if (DEBUG)
-                php_printf("DEBUG: Using temporary file for secure compilation: %s\n", temp_file);
-
-            /* Write decoded content to temp file with proper error checking */
-            FILE *tf = fopen(temp_file, "wb");
-            if (!tf)
-            {
-                if (DEBUG)
-                    php_printf("DEBUG: Failed to create temporary file for compilation\n");
-                /* Securely wipe sensitive data */
-                memset(decoded, 0, decoded_len);
-                efree(decoded);
-                return NULL;
-            }
-
-            fwrite(decoded, decoded_len, 1, tf);
-            fclose(tf);
-
-            /* Create a clean file handle for the temporary file */
-            zend_file_handle temp_file_handle;
-            memset(&temp_file_handle, 0, sizeof(zend_file_handle));
-            temp_file_handle.type = ZEND_HANDLE_FILENAME;
-            temp_file_handle.filename = zend_string_init(temp_file, strlen(temp_file), 0);
-            temp_file_handle.opened_path = NULL;
-
-            /* Compile using the original compiler with proper error handling */
-            op_array = original_compile_file(&temp_file_handle, type);
-
-            /* In debug mode, keep temporary file for inspection */
-            if (DEBUG)
-            {
-                php_printf("DEBUG: Temporary file retained for inspection: %s\n", temp_file);
-            }
-            else
-            {
-                /* Only remove the temp file if not in debug mode */
-                unlink(temp_file);
-            }
-
-            /* Clean up resources */
-            zend_string_release(temp_file_handle.filename);
-
-            /* Securely wipe sensitive data */
-            memset(decoded, 0, decoded_len);
-            efree(decoded);
-
-            /* Fix filenames in the op_array to match the original file */
-            if (op_array)
-            {
-                /* Only if compilation succeeded */
-                zend_string_release(op_array->filename);
-                op_array->filename = zend_string_init(filename, strlen(filename), 0);
-            }
-
-            if (!op_array)
-            {
-                if (DEBUG)
-                    php_printf("DEBUG: Compilation failed\n");
-            }
-            else
-            {
-                if (DEBUG)
-                    php_printf("DEBUG: Compilation successful\n");
-            }
-
-            return op_array;
-        }
+        return op_array;
     }
 
     if (DEBUG)

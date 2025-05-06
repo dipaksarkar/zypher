@@ -175,9 +175,16 @@ int extract_file_metadata(const char *encoded_content, size_t encoded_length,
     if (DEBUG)
     {
         php_printf("DEBUG: Format version: %d\n", metadata->format_version);
-        php_printf("DEBUG: Format type: %d (%s)\n",
-                   metadata->format_type,
-                   metadata->format_type == ZYPHER_FORMAT_OPCODE ? "opcode" : "source");
+        php_printf("DEBUG: Format type: %d (opcode)\n", metadata->format_version);
+    }
+
+    /* Verify format version */
+    if (metadata->format_version != ZYPHER_FORMAT_VERSION)
+    {
+        if (DEBUG)
+            php_printf("DEBUG: Unsupported format version %d\n", metadata->format_version);
+        zend_string_release(decoded_str);
+        return ZYPHER_ERR_INVALID_FILE;
     }
 
     /* Extract timestamp */
@@ -191,6 +198,11 @@ int extract_file_metadata(const char *encoded_content, size_t encoded_length,
 
     metadata->timestamp = (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3];
     pos += 4;
+
+    if (DEBUG)
+    {
+        php_printf("DEBUG: Timestamp: %u\n", metadata->timestamp);
+    }
 
     /* Extract IVs */
     if (data_len < pos + IV_LENGTH * 2)
@@ -344,14 +356,11 @@ char *decrypt_file_content(const char *encoded_content, size_t encoded_length,
     if (DEBUG)
     {
         php_printf("DEBUG: Format version: %d\n", metadata->format_version);
-        php_printf("DEBUG: Format type: %d (%s)\n",
-                   metadata->format_type,
-                   metadata->format_type == ZYPHER_FORMAT_OPCODE ? "opcode" : "source");
+        php_printf("DEBUG: Format type: %d (opcode)\n", metadata->format_version);
     }
 
     /* Verify format version */
-    if (metadata->format_version != ZYPHER_FORMAT_VERSION_V1 &&
-        metadata->format_version != ZYPHER_FORMAT_VERSION_V2)
+    if (metadata->format_version != ZYPHER_FORMAT_VERSION)
     {
         if (DEBUG)
             php_printf("DEBUG: Unsupported format version %d\n", metadata->format_version);
