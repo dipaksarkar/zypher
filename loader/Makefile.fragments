@@ -1,0 +1,32 @@
+# Build the encoder alongside the PHP extension
+encoder_all:
+	@echo "Building Zypher Encoder..."
+	@mkdir -p encoder/build encoder/bin
+	@$(MAKE) -C encoder
+
+encoder_clean:
+	@echo "Cleaning Zypher Encoder build files..."
+	@$(MAKE) -C encoder clean
+
+encoder_install: encoder_all
+	@echo "Installing Zypher Encoder..."
+	@$(INSTALL) -m 755 encoder/bin/zypher $(INSTALL_ROOT)$(bindir)/zypher
+
+# Override the standard targets to include encoder
+all: $(all_targets) encoder_all
+	@echo
+	@echo "Build complete. Both PHP extension and encoder have been built."
+	@echo "Don't forget to run 'make test'."
+	@echo
+
+clean: encoder_clean
+	find . -name \*.gcno -o -name \*.gcda | xargs rm -f
+	find . -name \*.lo -o -name \*.o -o -name \*.dep | xargs rm -f
+	find . -name \*.la -o -name \*.a | xargs rm -f
+	find . -name \*.so | xargs rm -f
+	find . -name .libs -a -type d|xargs rm -rf
+	rm -f libphp.la $(SAPI_CLI_PATH) $(SAPI_CGI_PATH) $(SAPI_LITESPEED_PATH) $(SAPI_FPM_PATH) $(OVERALL_TARGET) modules/* libs/*
+
+install: $(all_targets) $(install_targets) encoder_install
+
+.PHONY: encoder_all encoder_clean encoder_install
