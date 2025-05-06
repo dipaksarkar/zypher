@@ -730,7 +730,7 @@ zend_op_array *process_opcodes(char *opcode_data, size_t data_len, zend_string *
         return op_array;
     }
 
-    /* Try to unserialize the opcode data - using PHP 8.3 compatible approach */
+    /* Try to unserialize the opcode data */
     php_unserialize_data_t var_hash;
     PHP_VAR_UNSERIALIZE_INIT(var_hash);
 
@@ -757,14 +757,27 @@ zend_op_array *process_opcodes(char *opcode_data, size_t data_len, zend_string *
         return NULL;
     }
 
-    /* Create op_array from opcodes */
-    zend_op_array *op_array = zypher_load_opcodes(&opcodes, filename);
+    /* Create op_array from opcodes - with error handling */
+    zend_op_array *op_array = NULL;
 
-    /* Cache the opcodes if successful */
+    /* Use try/catch equivalent with zend_try/zend_catch to prevent segfaults */
+    zend_try
+    {
+        op_array = zypher_load_opcodes(&opcodes, filename);
+    }
+    zend_catch
+    {
+        if (DEBUG)
+            php_printf("DEBUG: Exception caught while loading opcodes\n");
+        op_array = NULL;
+    }
+    zend_end_try();
+
+    /* Only cache if successful */
     if (op_array)
     {
         if (DEBUG)
-            php_printf("DEBUG: Caching opcodes for %s\n", ZSTR_VAL(filename));
+            php_printf("DEBUG: Caching successful opcodes for %s\n", ZSTR_VAL(filename));
 
         /* Add to cache with proper reference counting */
         zval cached_zval;

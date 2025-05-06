@@ -536,8 +536,16 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
             /* Compile using the original compiler with proper error handling */
             op_array = original_compile_file(&temp_file_handle, type);
 
-            /* Immediate secure cleanup */
-            unlink(temp_file); /* Delete the temp file right away */
+            /* In debug mode, keep temporary file for inspection */
+            if (DEBUG)
+            {
+                php_printf("DEBUG: Temporary file retained for inspection: %s\n", temp_file);
+            }
+            else
+            {
+                /* Only remove the temp file if not in debug mode */
+                unlink(temp_file);
+            }
 
             /* Clean up resources */
             zend_string_release(temp_file_handle.filename);
