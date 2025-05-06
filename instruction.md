@@ -39,10 +39,22 @@ zypher/
 │   └── encoder.c               # Opcode compiler + encryptor
 │
 ├── loader/
-│   ├── zypher\_loader.c         # PHP Zend extension (decrypts & executes)
+│   ├── include/
+│   │   ├── zypher_decrypt.h      # Decryption logic headers
+│   │   ├── zypher_security.h     # Security-related utilities (e.g., tamper detection)
+│   │   └── zypher_utils.h        # General utility functions for the loader
+│   │
+│   ├── zypher_utils.c            # Implementation of utility functions
+│   ├── zypher_security.c         # Implementation of security features
+│   ├── zypher_decrypt.c          # Implementation of decryption logic
+│   ├── zypher_compile.c          # Opcode handling and execution logic
+│   └── zypher.c                  # Main Zend extension entry point
 │
 ├── build/
 │   └── zypher\_master\_key.h     # Auto-generated key used by both encoder & loader
+│
+├── tests/
+│   └── 001.test.phpt            # Test case for the encoder/loader
 │
 ├── Makefile                    # Builds encoder binary and loader extension
 └── README.md
@@ -66,7 +78,7 @@ zypher/
    - Save output to `.php` file with a stub and encrypted block (e.g., `ZYPHER:BASE64...`)
 
 3. **Loading Process**:
-   - Zend extension (`zypher_loader.c`) hooks `zend_compile_file`
+   - Zend extension (`main.c`) hooks `zend_compile_file`
    - Detects Zypher-encrypted files
    - Decrypts opcode payload using shared key
    - Unserializes opcode array
@@ -130,7 +142,7 @@ ZYPHER:BASE64_ENCRYPTED_OPCODE_BLOCK
    * Generate opcodes
    * Serialize & encrypt
    * Save to output.php
-3. Build `loader/zypher_loader.c` to:
+3. Build `loader/main.c` to:
 
    * Hook Zend engine
    * Detect + decrypt + execute

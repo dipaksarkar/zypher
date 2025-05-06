@@ -1,171 +1,171 @@
-# Zypher PHP Encoder
+# Zypher - PHP Encoder and Loader System
 
-Zypher is a comprehensive PHP source code protection system that encrypts PHP files using AES-256-CBC encryption. It consists of two main components:
-
-1. **PHP Encoder**: A Composer-based PHP application that encrypts PHP source code
-2. **PHP Extension (Loader)**: A C-based extension that decrypts and executes protected PHP files at runtime
+Zypher is a comprehensive PHP source code protection system that encodes PHP files into an encrypted format that can only be executed with the companion Zypher loader extension.
 
 ## Features
 
-- **Strong Encryption**: Uses AES-256-CBC with file-specific key derivation
-- **Code Obfuscation**: Multiple techniques including:
-  - Variable name obfuscation
-  - String encryption
-  - Junk code insertion
-  - Statement shuffling
-- **Flexible Options**: Configurable encryption strength and obfuscation levels
-- **Composer Integration**: Modern PHP project structure with PSR-4 autoloading
-- **Command-line Interface**: Easy-to-use CLI tool
-- **Cross-platform**: Works on Linux, macOS, and Windows
+- **Strong Encryption**: Uses industry-standard AES-256 encryption to protect source code
+- **Opcode Caching**: Pre-compiles PHP code for improved performance
+- **License Management**: Lock encoded files to specific domains or expiration dates
+- **Anti-Debugging**: Prevents use of debugging tools to reverse engineer code
+- **Compatibility**: Works with PHP 7.x and 8.x
 
-## Requirements
+## System Requirements
 
-- PHP 7.2 or higher
-- OpenSSL extension
-- Composer
+- PHP 7.2 or newer (compatible with PHP 8.x)
+- OpenSSL library
+- C compiler (GCC/Clang)
+- PHP development headers (php-dev package)
+
+## Directory Structure
+
+```
+zypher/
+├── build/               # Build artifacts and generated keys
+├── encoder/             # Encoder source files
+├── include/             # Common header files
+├── loader/              # PHP extension loader
+│   ├── build/           # Build files for PHP extension
+│   ├── include/         # Loader-specific headers
+│   └── modules/         # Compiled extension modules
+├── tests/               # Test files and scripts
+├── Makefile             # Build configuration
+└── README.md            # This file
+```
+
+## Building the Zypher System
+
+To build the entire Zypher system (both encoder and loader), run:
+
+```bash
+make
+```
+
+This will:
+1. Create necessary directories
+2. Generate a master encryption key
+3. Build the encoder binary
+4. Build the PHP extension loader
+
+### Building Individual Components
+
+To build only the encoder:
+
+```bash
+make encoder
+```
+
+To build only the loader:
+
+```bash
+make loader
+```
+
+To build a debug version of the loader with additional diagnostics:
+
+```bash
+make debug_loader
+```
 
 ## Installation
 
-### Via Composer
+After building, you can install the PHP extension to your PHP installation:
 
 ```bash
-composer require zypher/encoder
+make install
 ```
 
-### Manual Installation
+Then add the following line to your php.ini:
+
+```
+extension=zypher.so
+```
+
+## Using the Encoder
+
+The encoder is a command-line tool used to encode PHP files:
 
 ```bash
-git clone https://github.com/zypher/encoder.git
-cd encoder
-composer install
+./zypher [options] input_file [output_file]
 ```
 
-## Usage
+### Options:
 
-### Basic Usage
+- `-o <file>` - Specify output file (alternative to providing as second parameter)
+- `-b` - Enable obfuscation for encoded files
+- `-e <date>` - Set expiration date (format: YYYY-MM-DD)
+- `-l <domain>` - Lock to a specific domain
+- `-v` - Enable verbose output
+- `-h` - Display help
+
+### Examples:
 
 ```bash
-./bin/zypher /path/to/source.php /path/to/output.php
+# Basic encoding
+./zypher script.php
+
+# Specify output file
+./zypher -o script.encoded.php script.php
+
+# Encode with expiration date
+./zypher -e 2025-12-31 script.php
+
+# Encode with domain lock
+./zypher -l example.com script.php
+
+# Encode with obfuscation enabled
+./zypher -b script.php
 ```
-
-### Directory Encoding
-
-```bash
-./bin/zypher /path/to/source/dir /path/to/output/dir
-```
-
-### With Custom Master Key
-
-```bash
-./bin/zypher /path/to/source.php /path/to/output.php --master-key=your_secure_key
-```
-
-### With Obfuscation Options
-
-```bash
-./bin/zypher /path/to/source.php /path/to/output.php --obfuscate --string-encryption --junk-code
-```
-
-### Exclude Files
-
-```bash
-./bin/zypher /path/to/source/dir /path/to/output/dir --exclude=vendor/*,tests/*
-```
-
-### Verbose Mode
-
-```bash
-./bin/zypher /path/to/source.php /path/to/output.php --verbose
-```
-
-## Command-line Options
-
-| Option | Description |
-|--------|-------------|
-| `--master-key=KEY` | Set encryption master key (strongly recommended) |
-| `--obfuscate` | Enable code obfuscation |
-| `--string-encryption` | Enable string literal encryption |
-| `--junk-code` | Insert junk code to confuse reverse-engineering attempts |
-| `--shuffle-stmts` | Shuffle statement order where possible |
-| `--exclude=PATTERN` | Exclude files matching pattern (comma-separated) |\
-| `--verbose` | Show detailed encoding information |
-
-## Extension Installation
-
-To run encoded files, you need to install the Zypher Loader extension.
-
-For detailed instructions on building and installing the extension, please see the [Zypher Loader README](loader/README.md).
-
-Quick installation:
-
-```bash
-cd loader
-phpize
-./configure
-make
-sudo make install
-```
-
-The installation process automatically configures PHP to load the extension, no manual editing of php.ini is required.
-
-> **IMPORTANT**: Zypher is loaded as a `zend_extension` rather than a regular `extension` for proper code decryption.
 
 ## Testing
 
-The project includes a comprehensive test suite covering various aspects of the Zypher encoder functionality.
-
-### Test Suites
-
-- **Stubs Tests**: Tests encoding with different options using stub PHP files
-- **Integration Tests**: Tests that validate end-to-end functionality with the PHP extension
-- **Error Handling Tests**: Tests for proper handling of edge cases and error conditions
-
-### Running Tests
-
-Run all tests:
+To verify that your Zypher installation is working correctly, run:
 
 ```bash
-vendor/bin/phpunit
+make test
 ```
 
-### Integration Tests
+For more comprehensive testing:
 
-Integration tests verify that encoded files can be properly executed by the Zypher loader extension. These tests:
+```bash
+./tests/run.sh
+```
 
-1. Encode PHP files with various options
-2. Execute both the original and encoded versions
-3. Compare the results to ensure identical behavior
+The test script will run a series of tests to verify the encoder and loader functionality, including:
+- Basic functionality tests
+- Advanced PHP feature tests
+- Testing with different encoding options
+- License verification tests
 
-Note: Integration tests are automatically skipped if the Zypher extension is not loaded in PHP.
+## Troubleshooting
 
-### Testing with the Extension
+If you encounter issues with the Zypher system, try these steps:
 
-To run integration tests, you need to have the Zypher extension installed. Please refer to the [Extension Installation](#extension-installation) section above for installation instructions.
+1. Build a debug version of the loader:
+   ```bash
+   make debug_loader
+   ```
 
-## Security Recommendations
+2. Run your encoded file with the debug loader:
+   ```bash
+   php -d extension=/path/to/zypher_debug.so your_encoded_file.php
+   ```
 
-1. **Always use a custom master key** in production
-2. **Keep your master key secure** - never commit it to version control
-3. **Use all obfuscation options** for maximum security
-4. **Regularly update** both the encoder and loader components
+3. Check your system information:
+   ```bash
+   make info
+   ```
 
-## Project Structure
+## Security Notes
 
-- **bin/**: Command-line tools
-- **src/**: Source code for the encoder
-- **loader/**: PHP extension source code
-- **tests/**: Unit and integration tests
-
-## To-Do
-- [ ] Adding additional test cases to ensure robustness
-- [ ] Improving the documentation in code comments
-- [ ] Enhancing any of the obfuscation features
-- [ ] Implementing additional security measures
+- The master encryption key (`zypher_master_key.h`) is essential for security. Keep this file secure and private.
+- Do not share the encoder binary with end users - only distribute the loader extension.
+- For maximum security, encode files on a secure, isolated system.
 
 ## License
 
-Proprietary - All rights reserved.
+© 2025 Zypher Team. All rights reserved.
 
-## Support
+---
 
-For questions and support, please open an issue on the GitHub repository or contact support@zypher.com.
+For technical assistance or questions, please contact support@zypher.example.com

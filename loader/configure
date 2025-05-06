@@ -802,6 +802,8 @@ RANLIB
 AR
 ECHO
 LN_S
+OPENSSL_LIBS
+OPENSSL_CFLAGS
 AWK
 SHLIB_DL_SUFFIX_NAME
 SHLIB_SUFFIX_NAME
@@ -879,7 +881,7 @@ with_libdir
 with_php_config
 enable_zypher
 with_openssl
-with_debug
+enable_zypher_debug
 enable_shared
 enable_static
 enable_fast_install
@@ -899,7 +901,9 @@ CFLAGS
 LDFLAGS
 LIBS
 CPPFLAGS
-CPP'
+CPP
+OPENSSL_CFLAGS
+OPENSSL_LIBS'
 
 
 # Initialize some variables set by options.
@@ -1526,8 +1530,8 @@ Optional Features and Packages:
   --with-libdir=NAME      Look for libraries in .../NAME rather than .../lib
   --with-php-config=PATH  Path to php-config [php-config]
   --enable-zypher         Enable Zypher support
-  --with-openssl          Include OpenSSL support
-  --with-debug            Enable Zypher debug mode
+  --with-openssl=DIR    Include OpenSSL support (requires OpenSSL >= 1.0.1)
+  --enable-zypher-debug   Enable Zypher debug output
   --enable-shared=PKGS    Build shared libraries default=yes
   --enable-static=PKGS    Build static libraries default=yes
   --enable-fast-install=PKGS
@@ -1552,6 +1556,10 @@ Some influential environment variables:
   CPPFLAGS    (Objective) C/C++ preprocessor flags, e.g. -I<include dir> if
               you have headers in a nonstandard directory <include dir>
   CPP         C preprocessor
+  OPENSSL_CFLAGS
+              C compiler flags for OPENSSL, overriding pkg-config
+  OPENSSL_LIBS
+              linker flags for OPENSSL, overriding pkg-config
 
 Use these variables to override the choices made by 'configure' or to help
 it to find libraries and programs with nonstandard names/locations.
@@ -4657,10 +4665,11 @@ printf "%s\n" "no" >&6; }
 
 
 
+
 php_enable_zypher=no
 
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether to enable Zypher extension" >&5
-printf %s "checking whether to enable Zypher extension... " >&6; }
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether to enable Zypher support" >&5
+printf %s "checking whether to enable Zypher support... " >&6; }
 # Check whether --enable-zypher was given.
 if test ${enable_zypher+y}
 then :
@@ -4707,7 +4716,7 @@ printf "%s\n" "$ext_output" >&6; }
 
 
 
-php_with_openssl=yes
+php_with_openssl=no
 
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for OpenSSL support" >&5
 printf %s "checking for OpenSSL support... " >&6; }
@@ -4718,7 +4727,7 @@ then :
   withval=$with_openssl; PHP_OPENSSL=$withval
 else case e in #(
   e)
-  PHP_OPENSSL=yes
+  PHP_OPENSSL=no
   test "$PHP_ENABLE_ALL" && PHP_OPENSSL=$PHP_ENABLE_ALL
  ;;
 esac
@@ -4757,64 +4766,249 @@ printf "%s\n" "$ext_output" >&6; }
 
 
 
+if test "$PHP_ZYPHER" != "no"; then
+    if test "$PHP_OPENSSL" = "no"; then
+    as_fn_error $? "zypher requires OpenSSL library" "$LINENO" 5
+  fi
 
-php_with_debug=no
+    for i in $PHP_OPENSSL /usr/local/opt/openssl /usr/local/opt/openssl@1.1 /usr/local/opt/openssl@3 /usr/local /usr /opt/homebrew/opt/openssl /opt/homebrew/opt/openssl@1.1 /opt/homebrew/opt/openssl@3 /opt/local /usr/local/Cellar/openssl* ; do
+    if test -r $i/include/openssl/evp.h; then
+      PHP_OPENSSL_DIR=$i
+      { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: OpenSSL found in $i" >&5
+printf "%s\n" "OpenSSL found in $i" >&6; }
+      break
+    fi
+  done
 
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for zypher debug support" >&5
-printf %s "checking for zypher debug support... " >&6; }
+  if test -z "$PHP_OPENSSL_DIR"; then
 
-# Check whether --with-debug was given.
-if test ${with_debug+y}
-then :
-  withval=$with_debug; PHP_DEBUG=$withval
-else case e in #(
-  e)
-  PHP_DEBUG=no
+pkg_failed=no
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for openssl >= 1.0.1" >&5
+printf %s "checking for openssl >= 1.0.1... " >&6; }
 
- ;;
-esac
+if test -n "$OPENSSL_CFLAGS"; then
+    pkg_cv_OPENSSL_CFLAGS="$OPENSSL_CFLAGS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"openssl >= 1.0.1\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "openssl >= 1.0.1") 2>&5
+  ac_status=$?
+  printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_OPENSSL_CFLAGS=`$PKG_CONFIG --cflags "openssl >= 1.0.1" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
+fi
+if test -n "$OPENSSL_LIBS"; then
+    pkg_cv_OPENSSL_LIBS="$OPENSSL_LIBS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"openssl >= 1.0.1\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "openssl >= 1.0.1") 2>&5
+  ac_status=$?
+  printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_OPENSSL_LIBS=`$PKG_CONFIG --libs "openssl >= 1.0.1" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
 fi
 
 
-ext_output=$PHP_DEBUG
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ext_output" >&5
-printf "%s\n" "$ext_output" >&6; }
+
+if test $pkg_failed = yes; then
+        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; }
+
+if $PKG_CONFIG --atleast-pkgconfig-version 0.20; then
+        _pkg_short_errors_supported=yes
+else
+        _pkg_short_errors_supported=no
+fi
+        if test $_pkg_short_errors_supported = yes; then
+	        OPENSSL_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "openssl >= 1.0.1" 2>&1`
+        else
+	        OPENSSL_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "openssl >= 1.0.1" 2>&1`
+        fi
+	# Put the nasty error message in config.log where it belongs
+	echo "$OPENSSL_PKG_ERRORS" >&5
+
+
+      as_fn_error $? "OpenSSL library not found. Install openssl-dev/openssl-devel package or specify path with --with-openssl=<DIR>" "$LINENO" 5
+
+elif test $pkg_failed = untried; then
+        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; }
+
+      as_fn_error $? "OpenSSL library not found. Install openssl-dev/openssl-devel package or specify path with --with-openssl=<DIR>" "$LINENO" 5
+
+else
+	OPENSSL_CFLAGS=$pkg_cv_OPENSSL_CFLAGS
+	OPENSSL_LIBS=$pkg_cv_OPENSSL_LIBS
+        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+printf "%s\n" "yes" >&6; }
+
+      PHP_OPENSSL_DIR=/usr
+
+  for ac_i in $OPENSSL_LIBS; do
+    case $ac_i in
+    -pthread)
+      if test "$ext_shared" = "yes"; then
+        ZYPHER_SHARED_LIBADD="$ZYPHER_SHARED_LIBADD -pthread"
+      else
+
+
+  unique=`echo $ac_i|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$EXTRA_LDFLAGS$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "EXTRA_LDFLAGS$unique=set"
+    EXTRA_LDFLAGS="$EXTRA_LDFLAGS $ac_i"
+  fi
 
 
 
+  unique=`echo $ac_i|$SED 's/[^a-zA-Z0-9]/_/g'`
 
-if test "$PHP_ZYPHER" != "no"; then
-  # Check for OpenSSL support
-  if test "$PHP_OPENSSL" != "no"; then
-    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for OpenSSL" >&5
-printf %s "checking for OpenSSL... " >&6; }
+  cmd="echo $ac_n \"\$EXTRA_LDFLAGS_PROGRAM$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "EXTRA_LDFLAGS_PROGRAM$unique=set"
+    EXTRA_LDFLAGS_PROGRAM="$EXTRA_LDFLAGS_PROGRAM $ac_i"
+  fi
 
-    for i in $PHP_OPENSSL /usr/local /usr; do
-      if test -r $i/include/openssl/evp.h; then
-        OPENSSL_DIR=$i
-        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: found in $i" >&5
-printf "%s\n" "found in $i" >&6; }
-        break
       fi
-    done
+    ;;
+    -l*)
+      ac_ii=`echo $ac_i|cut -c 3-`
 
-    if test -z "$OPENSSL_DIR"; then
-      { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: not found" >&5
-printf "%s\n" "not found" >&6; }
-      as_fn_error $? "Please reinstall OpenSSL" "$LINENO" 5
+
+  case $ac_ii in
+  c|c_r) ;;
+  *)
+    if test "$ext_shared" = "yes"; then
+        ZYPHER_SHARED_LIBADD="$ZYPHER_SHARED_LIBADD -l$ac_ii"
+    else
+
+
+  case $ac_ii in
+  c|c_r) ;;
+  *)
+      LIBS="$LIBS -l$ac_ii"
+   ;;
+  esac
+
+
     fi
+   ;;
+  esac
 
 
-  if test "$OPENSSL_DIR/include" != "$PHP_OS_SDKPATH/usr/include"; then
+    ;;
+    -L*)
+      ac_ii=`echo $ac_i|cut -c 3-`
 
-  if test -z "$OPENSSL_DIR/include" || echo "$OPENSSL_DIR/include" | grep '^/' >/dev/null ; then
-    ai_p=$OPENSSL_DIR/include
+  if test "$ac_ii" != "$PHP_OS_SDKPATH/usr/$PHP_LIBDIR" && test "$ac_ii" != "/usr/lib"; then
+
+  if test -z "$ac_ii" || echo "$ac_ii" | grep '^/' >/dev/null ; then
+    ai_p=$ac_ii
   else
 
-    ep_dir=`echo $OPENSSL_DIR/include|$SED 's%/*[^/][^/]*/*$%%'`
+    ep_dir=`echo $ac_ii|$SED 's%/*[^/][^/]*/*$%%'`
 
     ep_realdir=`(cd "$ep_dir" && pwd)`
-    ai_p="$ep_realdir"/`basename "$OPENSSL_DIR/include"`
+    ai_p="$ep_realdir"/`basename "$ac_ii"`
+  fi
+
+
+      if test "$ext_shared" = "yes"; then
+        ZYPHER_SHARED_LIBADD="-L$ai_p $ZYPHER_SHARED_LIBADD"
+        test -n "$ld_runpath_switch" && ZYPHER_SHARED_LIBADD="$ld_runpath_switch$ai_p $ZYPHER_SHARED_LIBADD"
+      else
+
+
+
+  unique=`echo $ai_p|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$LIBPATH$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "LIBPATH$unique=set"
+
+    test -n "$ld_runpath_switch" && LDFLAGS="$LDFLAGS $ld_runpath_switch$ai_p"
+    LDFLAGS="$LDFLAGS -L$ai_p"
+    PHP_RPATHS="$PHP_RPATHS $ai_p"
+
+  fi
+
+
+      fi
+
+  fi
+
+    ;;
+    esac
+  done
+
+
+  for ac_i in $OPENSSL_CFLAGS; do
+    case $ac_i in
+    -I*)
+      ac_ii=`echo $ac_i|cut -c 3-`
+
+  if test "$ac_ii" != "$PHP_OS_SDKPATH/usr/include"; then
+
+  if test -z "$ac_ii" || echo "$ac_ii" | grep '^/' >/dev/null ; then
+    ai_p=$ac_ii
+  else
+
+    ep_dir=`echo $ac_ii|$SED 's%/*[^/][^/]*/*$%%'`
+
+    ep_realdir=`(cd "$ep_dir" && pwd)`
+    ai_p="$ep_realdir"/`basename "$ac_ii"`
+  fi
+
+
+
+  unique=`echo $ai_p|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$INCLUDEPATH$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "INCLUDEPATH$unique=set"
+
+      if test ""; then
+        INCLUDES="-I$ai_p $INCLUDES"
+      else
+        INCLUDES="$INCLUDES -I$ai_p"
+      fi
+
+  fi
+
+  fi
+
+    ;;
+    esac
+  done
+
+
+fi
+  else
+
+  if test "$PHP_OPENSSL_DIR/include" != "$PHP_OS_SDKPATH/usr/include"; then
+
+  if test -z "$PHP_OPENSSL_DIR/include" || echo "$PHP_OPENSSL_DIR/include" | grep '^/' >/dev/null ; then
+    ai_p=$PHP_OPENSSL_DIR/include
+  else
+
+    ep_dir=`echo $PHP_OPENSSL_DIR/include|$SED 's%/*[^/][^/]*/*$%%'`
+
+    ep_realdir=`(cd "$ep_dir" && pwd)`
+    ai_p="$ep_realdir"/`basename "$PHP_OPENSSL_DIR/include"`
   fi
 
 
@@ -4836,118 +5030,28 @@ printf "%s\n" "not found" >&6; }
   fi
 
 
-
-  if test "$ext_shared" = "yes"; then
-    ZYPHER_SHARED_LIBADD="-lssl $ZYPHER_SHARED_LIBADD"
-    if test -n "$OPENSSL_DIR/$PHP_LIBDIR"; then
-
-  if test "$OPENSSL_DIR/$PHP_LIBDIR" != "$PHP_OS_SDKPATH/usr/$PHP_LIBDIR" && test "$OPENSSL_DIR/$PHP_LIBDIR" != "/usr/lib"; then
-
-  if test -z "$OPENSSL_DIR/$PHP_LIBDIR" || echo "$OPENSSL_DIR/$PHP_LIBDIR" | grep '^/' >/dev/null ; then
-    ai_p=$OPENSSL_DIR/$PHP_LIBDIR
-  else
-
-    ep_dir=`echo $OPENSSL_DIR/$PHP_LIBDIR|$SED 's%/*[^/][^/]*/*$%%'`
-
-    ep_realdir=`(cd "$ep_dir" && pwd)`
-    ai_p="$ep_realdir"/`basename "$OPENSSL_DIR/$PHP_LIBDIR"`
-  fi
-
-
-      if test "$ext_shared" = "yes"; then
-        ZYPHER_SHARED_LIBADD="-L$ai_p $ZYPHER_SHARED_LIBADD"
-        test -n "$ld_runpath_switch" && ZYPHER_SHARED_LIBADD="$ld_runpath_switch$ai_p $ZYPHER_SHARED_LIBADD"
-      else
-
-
-
-  unique=`echo $ai_p|$SED 's/[^a-zA-Z0-9]/_/g'`
-
-  cmd="echo $ac_n \"\$LIBPATH$unique$ac_c\""
-  if test -n "$unique" && test "`eval $cmd`" = "" ; then
-    eval "LIBPATH$unique=set"
-
-    test -n "$ld_runpath_switch" && LDFLAGS="$LDFLAGS $ld_runpath_switch$ai_p"
-    LDFLAGS="$LDFLAGS -L$ai_p"
-    PHP_RPATHS="$PHP_RPATHS $ai_p"
-
-  fi
-
-
-      fi
-
-  fi
-
+    if test -d $PHP_OPENSSL_DIR/lib64; then
+      PHP_OPENSSL_LIB_DIR=$PHP_OPENSSL_DIR/lib64
+    else
+      PHP_OPENSSL_LIB_DIR=$PHP_OPENSSL_DIR/lib
     fi
-  else
-
-
-  if test -n "$OPENSSL_DIR/$PHP_LIBDIR"; then
-
-  if test "$OPENSSL_DIR/$PHP_LIBDIR" != "$PHP_OS_SDKPATH/usr/$PHP_LIBDIR" && test "$OPENSSL_DIR/$PHP_LIBDIR" != "/usr/lib"; then
-
-  if test -z "$OPENSSL_DIR/$PHP_LIBDIR" || echo "$OPENSSL_DIR/$PHP_LIBDIR" | grep '^/' >/dev/null ; then
-    ai_p=$OPENSSL_DIR/$PHP_LIBDIR
-  else
-
-    ep_dir=`echo $OPENSSL_DIR/$PHP_LIBDIR|$SED 's%/*[^/][^/]*/*$%%'`
-
-    ep_realdir=`(cd "$ep_dir" && pwd)`
-    ai_p="$ep_realdir"/`basename "$OPENSSL_DIR/$PHP_LIBDIR"`
-  fi
-
-
-
-
-
-  unique=`echo $ai_p|$SED 's/[^a-zA-Z0-9]/_/g'`
-
-  cmd="echo $ac_n \"\$LIBPATH$unique$ac_c\""
-  if test -n "$unique" && test "`eval $cmd`" = "" ; then
-    eval "LIBPATH$unique=set"
-
-    test -n "$ld_runpath_switch" && LDFLAGS="$LDFLAGS $ld_runpath_switch$ai_p"
-    LDFLAGS="$LDFLAGS -L$ai_p"
-    PHP_RPATHS="$PHP_RPATHS $ai_p"
-
-  fi
-
-
-
-  fi
-
-  fi
-
-
-  case ssl in
-  c|c_r) ;;
-  *)
-      LIBS="-lssl $LIBS"
-   ;;
-  esac
-
-
-
-
-  fi
-
 
 
 
   if test "$ext_shared" = "yes"; then
     ZYPHER_SHARED_LIBADD="-lcrypto $ZYPHER_SHARED_LIBADD"
-    if test -n "$OPENSSL_DIR/$PHP_LIBDIR"; then
+    if test -n "$PHP_OPENSSL_LIB_DIR"; then
 
-  if test "$OPENSSL_DIR/$PHP_LIBDIR" != "$PHP_OS_SDKPATH/usr/$PHP_LIBDIR" && test "$OPENSSL_DIR/$PHP_LIBDIR" != "/usr/lib"; then
+  if test "$PHP_OPENSSL_LIB_DIR" != "$PHP_OS_SDKPATH/usr/$PHP_LIBDIR" && test "$PHP_OPENSSL_LIB_DIR" != "/usr/lib"; then
 
-  if test -z "$OPENSSL_DIR/$PHP_LIBDIR" || echo "$OPENSSL_DIR/$PHP_LIBDIR" | grep '^/' >/dev/null ; then
-    ai_p=$OPENSSL_DIR/$PHP_LIBDIR
+  if test -z "$PHP_OPENSSL_LIB_DIR" || echo "$PHP_OPENSSL_LIB_DIR" | grep '^/' >/dev/null ; then
+    ai_p=$PHP_OPENSSL_LIB_DIR
   else
 
-    ep_dir=`echo $OPENSSL_DIR/$PHP_LIBDIR|$SED 's%/*[^/][^/]*/*$%%'`
+    ep_dir=`echo $PHP_OPENSSL_LIB_DIR|$SED 's%/*[^/][^/]*/*$%%'`
 
     ep_realdir=`(cd "$ep_dir" && pwd)`
-    ai_p="$ep_realdir"/`basename "$OPENSSL_DIR/$PHP_LIBDIR"`
+    ai_p="$ep_realdir"/`basename "$PHP_OPENSSL_LIB_DIR"`
   fi
 
 
@@ -4979,18 +5083,18 @@ printf "%s\n" "not found" >&6; }
   else
 
 
-  if test -n "$OPENSSL_DIR/$PHP_LIBDIR"; then
+  if test -n "$PHP_OPENSSL_LIB_DIR"; then
 
-  if test "$OPENSSL_DIR/$PHP_LIBDIR" != "$PHP_OS_SDKPATH/usr/$PHP_LIBDIR" && test "$OPENSSL_DIR/$PHP_LIBDIR" != "/usr/lib"; then
+  if test "$PHP_OPENSSL_LIB_DIR" != "$PHP_OS_SDKPATH/usr/$PHP_LIBDIR" && test "$PHP_OPENSSL_LIB_DIR" != "/usr/lib"; then
 
-  if test -z "$OPENSSL_DIR/$PHP_LIBDIR" || echo "$OPENSSL_DIR/$PHP_LIBDIR" | grep '^/' >/dev/null ; then
-    ai_p=$OPENSSL_DIR/$PHP_LIBDIR
+  if test -z "$PHP_OPENSSL_LIB_DIR" || echo "$PHP_OPENSSL_LIB_DIR" | grep '^/' >/dev/null ; then
+    ai_p=$PHP_OPENSSL_LIB_DIR
   else
 
-    ep_dir=`echo $OPENSSL_DIR/$PHP_LIBDIR|$SED 's%/*[^/][^/]*/*$%%'`
+    ep_dir=`echo $PHP_OPENSSL_LIB_DIR|$SED 's%/*[^/][^/]*/*$%%'`
 
     ep_realdir=`(cd "$ep_dir" && pwd)`
-    ai_p="$ep_realdir"/`basename "$OPENSSL_DIR/$PHP_LIBDIR"`
+    ai_p="$ep_realdir"/`basename "$PHP_OPENSSL_LIB_DIR"`
   fi
 
 
@@ -5029,23 +5133,659 @@ printf "%s\n" "not found" >&6; }
   fi
 
 
+
+
+  if test "$ext_shared" = "yes"; then
+    ZYPHER_SHARED_LIBADD="-lssl $ZYPHER_SHARED_LIBADD"
+    if test -n "$PHP_OPENSSL_LIB_DIR"; then
+
+  if test "$PHP_OPENSSL_LIB_DIR" != "$PHP_OS_SDKPATH/usr/$PHP_LIBDIR" && test "$PHP_OPENSSL_LIB_DIR" != "/usr/lib"; then
+
+  if test -z "$PHP_OPENSSL_LIB_DIR" || echo "$PHP_OPENSSL_LIB_DIR" | grep '^/' >/dev/null ; then
+    ai_p=$PHP_OPENSSL_LIB_DIR
+  else
+
+    ep_dir=`echo $PHP_OPENSSL_LIB_DIR|$SED 's%/*[^/][^/]*/*$%%'`
+
+    ep_realdir=`(cd "$ep_dir" && pwd)`
+    ai_p="$ep_realdir"/`basename "$PHP_OPENSSL_LIB_DIR"`
   fi
 
-  # Enable debug mode if requested
-  if test "$PHP_DEBUG" = "yes" || test "$PHP_WITH_DEBUG" = "yes"; then
+
+      if test "$ext_shared" = "yes"; then
+        ZYPHER_SHARED_LIBADD="-L$ai_p $ZYPHER_SHARED_LIBADD"
+        test -n "$ld_runpath_switch" && ZYPHER_SHARED_LIBADD="$ld_runpath_switch$ai_p $ZYPHER_SHARED_LIBADD"
+      else
+
+
+
+  unique=`echo $ai_p|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$LIBPATH$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "LIBPATH$unique=set"
+
+    test -n "$ld_runpath_switch" && LDFLAGS="$LDFLAGS $ld_runpath_switch$ai_p"
+    LDFLAGS="$LDFLAGS -L$ai_p"
+    PHP_RPATHS="$PHP_RPATHS $ai_p"
+
+  fi
+
+
+      fi
+
+  fi
+
+    fi
+  else
+
+
+  if test -n "$PHP_OPENSSL_LIB_DIR"; then
+
+  if test "$PHP_OPENSSL_LIB_DIR" != "$PHP_OS_SDKPATH/usr/$PHP_LIBDIR" && test "$PHP_OPENSSL_LIB_DIR" != "/usr/lib"; then
+
+  if test -z "$PHP_OPENSSL_LIB_DIR" || echo "$PHP_OPENSSL_LIB_DIR" | grep '^/' >/dev/null ; then
+    ai_p=$PHP_OPENSSL_LIB_DIR
+  else
+
+    ep_dir=`echo $PHP_OPENSSL_LIB_DIR|$SED 's%/*[^/][^/]*/*$%%'`
+
+    ep_realdir=`(cd "$ep_dir" && pwd)`
+    ai_p="$ep_realdir"/`basename "$PHP_OPENSSL_LIB_DIR"`
+  fi
+
+
+
+
+
+  unique=`echo $ai_p|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$LIBPATH$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "LIBPATH$unique=set"
+
+    test -n "$ld_runpath_switch" && LDFLAGS="$LDFLAGS $ld_runpath_switch$ai_p"
+    LDFLAGS="$LDFLAGS -L$ai_p"
+    PHP_RPATHS="$PHP_RPATHS $ai_p"
+
+  fi
+
+
+
+  fi
+
+  fi
+
+
+  case ssl in
+  c|c_r) ;;
+  *)
+      LIBS="-lssl $LIBS"
+   ;;
+  esac
+
+
+
+
+  fi
+
+
+  fi
+
+
+  save_old_LDFLAGS=$LDFLAGS
+  ac_stuff=""
+
+  save_ext_shared=$ext_shared
+  ext_shared=yes
+
+  for ac_i in $ac_stuff; do
+    case $ac_i in
+    -pthread)
+      if test "$ext_shared" = "yes"; then
+        LDFLAGS="$LDFLAGS -pthread"
+      else
+
+
+  unique=`echo $ac_i|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$EXTRA_LDFLAGS$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "EXTRA_LDFLAGS$unique=set"
+    EXTRA_LDFLAGS="$EXTRA_LDFLAGS $ac_i"
+  fi
+
+
+
+  unique=`echo $ac_i|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$EXTRA_LDFLAGS_PROGRAM$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "EXTRA_LDFLAGS_PROGRAM$unique=set"
+    EXTRA_LDFLAGS_PROGRAM="$EXTRA_LDFLAGS_PROGRAM $ac_i"
+  fi
+
+      fi
+    ;;
+    -l*)
+      ac_ii=`echo $ac_i|cut -c 3-`
+
+
+  case $ac_ii in
+  c|c_r) ;;
+  *)
+    if test "$ext_shared" = "yes"; then
+        LDFLAGS="$LDFLAGS -l$ac_ii"
+    else
+
+
+  case $ac_ii in
+  c|c_r) ;;
+  *)
+      LIBS="$LIBS -l$ac_ii"
+   ;;
+  esac
+
+
+    fi
+   ;;
+  esac
+
+
+    ;;
+    -L*)
+      ac_ii=`echo $ac_i|cut -c 3-`
+
+  if test "$ac_ii" != "$PHP_OS_SDKPATH/usr/$PHP_LIBDIR" && test "$ac_ii" != "/usr/lib"; then
+
+  if test -z "$ac_ii" || echo "$ac_ii" | grep '^/' >/dev/null ; then
+    ai_p=$ac_ii
+  else
+
+    ep_dir=`echo $ac_ii|$SED 's%/*[^/][^/]*/*$%%'`
+
+    ep_realdir=`(cd "$ep_dir" && pwd)`
+    ai_p="$ep_realdir"/`basename "$ac_ii"`
+  fi
+
+
+      if test "$ext_shared" = "yes"; then
+        LDFLAGS="-L$ai_p $LDFLAGS"
+        test -n "$ld_runpath_switch" && LDFLAGS="$ld_runpath_switch$ai_p $LDFLAGS"
+      else
+
+
+
+  unique=`echo $ai_p|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$LIBPATH$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "LIBPATH$unique=set"
+
+    test -n "$ld_runpath_switch" && LDFLAGS="$LDFLAGS $ld_runpath_switch$ai_p"
+    LDFLAGS="$LDFLAGS -L$ai_p"
+    PHP_RPATHS="$PHP_RPATHS $ai_p"
+
+  fi
+
+
+      fi
+
+  fi
+
+    ;;
+    esac
+  done
+
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for EVP_CIPHER_CTX_new in -lcrypto" >&5
+printf %s "checking for EVP_CIPHER_CTX_new in -lcrypto... " >&6; }
+if test ${ac_cv_lib_crypto_EVP_CIPHER_CTX_new+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_check_lib_save_LIBS=$LIBS
+LIBS="-lcrypto  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char EVP_CIPHER_CTX_new (void);
+int
+main (void)
+{
+return EVP_CIPHER_CTX_new ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_lib_crypto_EVP_CIPHER_CTX_new=yes
+else case e in #(
+  e) ac_cv_lib_crypto_EVP_CIPHER_CTX_new=no ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_crypto_EVP_CIPHER_CTX_new" >&5
+printf "%s\n" "$ac_cv_lib_crypto_EVP_CIPHER_CTX_new" >&6; }
+if test "x$ac_cv_lib_crypto_EVP_CIPHER_CTX_new" = xyes
+then :
+
+    LDFLAGS=$save_old_LDFLAGS
+    ext_shared=$save_ext_shared
+
+
+printf "%s\n" "#define HAVE_EVP_CIPHER_CTX_NEW 1" >>confdefs.h
+
+
+
+else case e in #(
+  e)
+    LDFLAGS=$save_old_LDFLAGS
+    ext_shared=$save_ext_shared
+    unset ac_cv_lib_crypto_EVP_CIPHER_CTX_new
+
+   ;;
+esac
+fi
+
+
+
+  save_old_LDFLAGS=$LDFLAGS
+  ac_stuff=""
+
+  save_ext_shared=$ext_shared
+  ext_shared=yes
+
+  for ac_i in $ac_stuff; do
+    case $ac_i in
+    -pthread)
+      if test "$ext_shared" = "yes"; then
+        LDFLAGS="$LDFLAGS -pthread"
+      else
+
+
+  unique=`echo $ac_i|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$EXTRA_LDFLAGS$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "EXTRA_LDFLAGS$unique=set"
+    EXTRA_LDFLAGS="$EXTRA_LDFLAGS $ac_i"
+  fi
+
+
+
+  unique=`echo $ac_i|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$EXTRA_LDFLAGS_PROGRAM$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "EXTRA_LDFLAGS_PROGRAM$unique=set"
+    EXTRA_LDFLAGS_PROGRAM="$EXTRA_LDFLAGS_PROGRAM $ac_i"
+  fi
+
+      fi
+    ;;
+    -l*)
+      ac_ii=`echo $ac_i|cut -c 3-`
+
+
+  case $ac_ii in
+  c|c_r) ;;
+  *)
+    if test "$ext_shared" = "yes"; then
+        LDFLAGS="$LDFLAGS -l$ac_ii"
+    else
+
+
+  case $ac_ii in
+  c|c_r) ;;
+  *)
+      LIBS="$LIBS -l$ac_ii"
+   ;;
+  esac
+
+
+    fi
+   ;;
+  esac
+
+
+    ;;
+    -L*)
+      ac_ii=`echo $ac_i|cut -c 3-`
+
+  if test "$ac_ii" != "$PHP_OS_SDKPATH/usr/$PHP_LIBDIR" && test "$ac_ii" != "/usr/lib"; then
+
+  if test -z "$ac_ii" || echo "$ac_ii" | grep '^/' >/dev/null ; then
+    ai_p=$ac_ii
+  else
+
+    ep_dir=`echo $ac_ii|$SED 's%/*[^/][^/]*/*$%%'`
+
+    ep_realdir=`(cd "$ep_dir" && pwd)`
+    ai_p="$ep_realdir"/`basename "$ac_ii"`
+  fi
+
+
+      if test "$ext_shared" = "yes"; then
+        LDFLAGS="-L$ai_p $LDFLAGS"
+        test -n "$ld_runpath_switch" && LDFLAGS="$ld_runpath_switch$ai_p $LDFLAGS"
+      else
+
+
+
+  unique=`echo $ai_p|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$LIBPATH$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "LIBPATH$unique=set"
+
+    test -n "$ld_runpath_switch" && LDFLAGS="$LDFLAGS $ld_runpath_switch$ai_p"
+    LDFLAGS="$LDFLAGS -L$ai_p"
+    PHP_RPATHS="$PHP_RPATHS $ai_p"
+
+  fi
+
+
+      fi
+
+  fi
+
+    ;;
+    esac
+  done
+
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for EVP_PKEY_CTX_new_id in -lcrypto" >&5
+printf %s "checking for EVP_PKEY_CTX_new_id in -lcrypto... " >&6; }
+if test ${ac_cv_lib_crypto_EVP_PKEY_CTX_new_id+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_check_lib_save_LIBS=$LIBS
+LIBS="-lcrypto  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char EVP_PKEY_CTX_new_id (void);
+int
+main (void)
+{
+return EVP_PKEY_CTX_new_id ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_lib_crypto_EVP_PKEY_CTX_new_id=yes
+else case e in #(
+  e) ac_cv_lib_crypto_EVP_PKEY_CTX_new_id=no ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_crypto_EVP_PKEY_CTX_new_id" >&5
+printf "%s\n" "$ac_cv_lib_crypto_EVP_PKEY_CTX_new_id" >&6; }
+if test "x$ac_cv_lib_crypto_EVP_PKEY_CTX_new_id" = xyes
+then :
+
+    LDFLAGS=$save_old_LDFLAGS
+    ext_shared=$save_ext_shared
+
+
+printf "%s\n" "#define HAVE_EVP_PKEY_CTX_NEW_ID 1" >>confdefs.h
+
+
+
+else case e in #(
+  e)
+    LDFLAGS=$save_old_LDFLAGS
+    ext_shared=$save_ext_shared
+    unset ac_cv_lib_crypto_EVP_PKEY_CTX_new_id
+
+   ;;
+esac
+fi
+
+
+
+  save_old_LDFLAGS=$LDFLAGS
+  ac_stuff=""
+
+  save_ext_shared=$ext_shared
+  ext_shared=yes
+
+  for ac_i in $ac_stuff; do
+    case $ac_i in
+    -pthread)
+      if test "$ext_shared" = "yes"; then
+        LDFLAGS="$LDFLAGS -pthread"
+      else
+
+
+  unique=`echo $ac_i|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$EXTRA_LDFLAGS$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "EXTRA_LDFLAGS$unique=set"
+    EXTRA_LDFLAGS="$EXTRA_LDFLAGS $ac_i"
+  fi
+
+
+
+  unique=`echo $ac_i|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$EXTRA_LDFLAGS_PROGRAM$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "EXTRA_LDFLAGS_PROGRAM$unique=set"
+    EXTRA_LDFLAGS_PROGRAM="$EXTRA_LDFLAGS_PROGRAM $ac_i"
+  fi
+
+      fi
+    ;;
+    -l*)
+      ac_ii=`echo $ac_i|cut -c 3-`
+
+
+  case $ac_ii in
+  c|c_r) ;;
+  *)
+    if test "$ext_shared" = "yes"; then
+        LDFLAGS="$LDFLAGS -l$ac_ii"
+    else
+
+
+  case $ac_ii in
+  c|c_r) ;;
+  *)
+      LIBS="$LIBS -l$ac_ii"
+   ;;
+  esac
+
+
+    fi
+   ;;
+  esac
+
+
+    ;;
+    -L*)
+      ac_ii=`echo $ac_i|cut -c 3-`
+
+  if test "$ac_ii" != "$PHP_OS_SDKPATH/usr/$PHP_LIBDIR" && test "$ac_ii" != "/usr/lib"; then
+
+  if test -z "$ac_ii" || echo "$ac_ii" | grep '^/' >/dev/null ; then
+    ai_p=$ac_ii
+  else
+
+    ep_dir=`echo $ac_ii|$SED 's%/*[^/][^/]*/*$%%'`
+
+    ep_realdir=`(cd "$ep_dir" && pwd)`
+    ai_p="$ep_realdir"/`basename "$ac_ii"`
+  fi
+
+
+      if test "$ext_shared" = "yes"; then
+        LDFLAGS="-L$ai_p $LDFLAGS"
+        test -n "$ld_runpath_switch" && LDFLAGS="$ld_runpath_switch$ai_p $LDFLAGS"
+      else
+
+
+
+  unique=`echo $ai_p|$SED 's/[^a-zA-Z0-9]/_/g'`
+
+  cmd="echo $ac_n \"\$LIBPATH$unique$ac_c\""
+  if test -n "$unique" && test "`eval $cmd`" = "" ; then
+    eval "LIBPATH$unique=set"
+
+    test -n "$ld_runpath_switch" && LDFLAGS="$LDFLAGS $ld_runpath_switch$ai_p"
+    LDFLAGS="$LDFLAGS -L$ai_p"
+    PHP_RPATHS="$PHP_RPATHS $ai_p"
+
+  fi
+
+
+      fi
+
+  fi
+
+    ;;
+    esac
+  done
+
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for EVP_aes_256_gcm in -lcrypto" >&5
+printf %s "checking for EVP_aes_256_gcm in -lcrypto... " >&6; }
+if test ${ac_cv_lib_crypto_EVP_aes_256_gcm+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_check_lib_save_LIBS=$LIBS
+LIBS="-lcrypto  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char EVP_aes_256_gcm (void);
+int
+main (void)
+{
+return EVP_aes_256_gcm ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_lib_crypto_EVP_aes_256_gcm=yes
+else case e in #(
+  e) ac_cv_lib_crypto_EVP_aes_256_gcm=no ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_crypto_EVP_aes_256_gcm" >&5
+printf "%s\n" "$ac_cv_lib_crypto_EVP_aes_256_gcm" >&6; }
+if test "x$ac_cv_lib_crypto_EVP_aes_256_gcm" = xyes
+then :
+
+    LDFLAGS=$save_old_LDFLAGS
+    ext_shared=$save_ext_shared
+
+
+printf "%s\n" "#define HAVE_EVP_AES_256_GCM 1" >>confdefs.h
+
+
+
+else case e in #(
+  e)
+    LDFLAGS=$save_old_LDFLAGS
+    ext_shared=$save_ext_shared
+    unset ac_cv_lib_crypto_EVP_aes_256_gcm
+
+   ;;
+esac
+fi
+
+
+
+printf "%s\n" "#define HAVE_OPENSSL 1" >>confdefs.h
+
+
+
+php_enable_zypher_debug=no
+
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether to enable Zypher debug mode" >&5
+printf %s "checking whether to enable Zypher debug mode... " >&6; }
+# Check whether --enable-zypher-debug was given.
+if test ${enable_zypher_debug+y}
+then :
+  enableval=$enable_zypher_debug; PHP_ZYPHER_DEBUG=$enableval
+else case e in #(
+  e)
+  PHP_ZYPHER_DEBUG=no
+
+ ;;
+esac
+fi
+
+
+ext_output=$PHP_ZYPHER_DEBUG
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ext_output" >&5
+printf "%s\n" "$ext_output" >&6; }
+
+
+
+
+  if test "$PHP_ZYPHER_DEBUG" != "no"; then
 
 printf "%s\n" "#define ENABLE_ZYPHER_DEBUG 1" >>confdefs.h
 
-    # Remove optimize flags and add -g for better debugging
-    CFLAGS=`echo "$CFLAGS" | sed -e 's/-O0-9s//g'`
-    CFLAGS="$CFLAGS -g -O0"
   fi
 
-  # Define source files
-  ZYPHER_SOURCES="src/main.c src/decrypt.c src/security.c src/utils.c"
 
 
-  PHP_VAR_SUBST="$PHP_VAR_SUBST ZYPHER_SHARED_LIBADD"
+    BUILD_DIR="$BUILD_DIR $ext_builddir/include"
+
+
+
+    if ! test -d "$ext_builddir/include"; then
+    mkdir -p "$ext_builddir/include"
+  fi
 
 
   ext_builddir=.
@@ -5076,7 +5816,11 @@ printf "%s\n" "#define ENABLE_ZYPHER_DEBUG 1" >>confdefs.h
 
 
   old_IFS=$IFS
-  for ac_src in $ZYPHER_SOURCES; do
+  for ac_src in zypher.c \
+    zypher_compile.c \
+    zypher_decrypt.c \
+    zypher_security.c \
+    zypher_utils.c; do
 
       IFS=.
       set $ac_src
@@ -5128,7 +5872,11 @@ EOF
 
 
   old_IFS=$IFS
-  for ac_src in $ZYPHER_SOURCES; do
+  for ac_src in zypher.c \
+    zypher_compile.c \
+    zypher_decrypt.c \
+    zypher_security.c \
+    zypher_utils.c; do
 
       IFS=.
       set $ac_src
@@ -5210,7 +5958,11 @@ printf "%s\n" "#define COMPILE_DL_ZYPHER 1" >>confdefs.h
 
 
   old_IFS=$IFS
-  for ac_src in $ZYPHER_SOURCES; do
+  for ac_src in zypher.c \
+    zypher_compile.c \
+    zypher_decrypt.c \
+    zypher_security.c \
+    zypher_utils.c; do
 
       IFS=.
       set $ac_src
@@ -5259,7 +6011,11 @@ EOF
 
 
   old_IFS=$IFS
-  for ac_src in $ZYPHER_SOURCES; do
+  for ac_src in zypher.c \
+    zypher_compile.c \
+    zypher_decrypt.c \
+    zypher_security.c \
+    zypher_utils.c; do
 
       IFS=.
       set $ac_src
@@ -5304,23 +6060,7 @@ EOF
 
 
 
-    header_path=ext/zypher
-    for header_file in src/php_loader.h src/main.h src/decrypt.h src/security.h src/utils.h; do
-      hp_hf="$header_path/$header_file"
-
-
-  unique=`echo $hp_hf|$SED 's/[^a-zA-Z0-9]/_/g'`
-
-  cmd="echo $ac_n \"\$INSTALLHEADERS$unique$ac_c\""
-  if test -n "$unique" && test "`eval $cmd`" = "" ; then
-    eval "INSTALLHEADERS$unique=set"
-
-        INSTALL_HEADERS="$INSTALL_HEADERS $hp_hf"
-
-  fi
-
-    done
-
+  PHP_VAR_SUBST="$PHP_VAR_SUBST ZYPHER_SHARED_LIBADD"
 
 fi
 
@@ -5908,7 +6648,7 @@ ia64-*-hpux*)
   ;;
 *-*-irix6*)
   # Find out which ABI we are using.
-  echo '#line 5911 "configure"' > conftest.$ac_ext
+  echo '#line 6651 "configure"' > conftest.$ac_ext
   if { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_compile\""; } >&5
   (eval $ac_compile) 2>&5
   ac_status=$?
@@ -7287,7 +8027,7 @@ else case e in #(
       LDFLAGS="$LDFLAGS -Wl,-exported_symbols_list,conftest.sym"
 
 cat > conftest.$ac_ext <<EOF
-#line 7290 "configure"
+#line 8030 "configure"
 #include "confdefs.h"
 int main(void) {
 ; return 0; }
@@ -7449,11 +8189,11 @@ else case e in #(
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"configure:7452: $lt_compile\"" >&5)
+   (eval echo "\"configure:8192: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "configure:7456: \$? = $ac_status" >&5
+   echo "configure:8196: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -7749,11 +8489,11 @@ else case e in #(
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"configure:7752: $lt_compile\"" >&5)
+   (eval echo "\"configure:8492: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "configure:7756: \$? = $ac_status" >&5
+   echo "configure:8496: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -7857,11 +8597,11 @@ else case e in #(
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"configure:7860: $lt_compile\"" >&5)
+   (eval echo "\"configure:8600: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "configure:7864: \$? = $ac_status" >&5
+   echo "configure:8604: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -8322,7 +9062,7 @@ _LT_EOF
        # Determine the default libpath from the value encoded in an empty executable.
 
 cat > conftest.$ac_ext <<EOF
-#line 8325 "configure"
+#line 9065 "configure"
 #include "confdefs.h"
 int main(void) {
 ; return 0; }
@@ -8364,7 +9104,7 @@ if test -z "$aix_libpath"; then aix_libpath="/usr/lib:/lib"; fi
 	 # Determine the default libpath from the value encoded in an empty executable.
 
 cat > conftest.$ac_ext <<EOF
-#line 8367 "configure"
+#line 9107 "configure"
 #include "confdefs.h"
 int main(void) {
 ; return 0; }
@@ -9945,7 +10685,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 9948 "configure"
+#line 10688 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -10044,7 +10784,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 10047 "configure"
+#line 10787 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -11113,7 +11853,7 @@ case $host_os in
       # Determine the default libpath from the value encoded in an empty executable.
 
 cat > conftest.$ac_ext <<EOF
-#line 11116 "configure"
+#line 11856 "configure"
 #include "confdefs.h"
 int main(void) {
 ; return 0; }
@@ -11156,7 +11896,7 @@ if test -z "$aix_libpath"; then aix_libpath="/usr/lib:/lib"; fi
 	# Determine the default libpath from the value encoded in an empty executable.
 
 cat > conftest.$ac_ext <<EOF
-#line 11159 "configure"
+#line 11899 "configure"
 #include "confdefs.h"
 int main(void) {
 ; return 0; }
@@ -12409,11 +13149,11 @@ else case e in #(
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"configure:12412: $lt_compile\"" >&5)
+   (eval echo "\"configure:13152: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "configure:12416: \$? = $ac_status" >&5
+   echo "configure:13156: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -12517,11 +13257,11 @@ else case e in #(
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"configure:12520: $lt_compile\"" >&5)
+   (eval echo "\"configure:13260: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "configure:12524: \$? = $ac_status" >&5
+   echo "configure:13264: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized

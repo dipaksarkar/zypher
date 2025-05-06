@@ -1,73 +1,69 @@
+# Zypher .gitignore file
+
+# Build artifacts
+/build/
+/loader/modules/
+/loader/build/
+
 # PHP extension build files
-*.la
 *.lo
-*.o
+*.la
 *.so
-*.dep
+*.dll
 .libs/
-build/
+.deps/
 
-# PHP Extension specific
-loader/modules/
-loader/autom4te.cache/
-loader/config.*
-loader/configure.*
-!loader/config.m4
-!loader/configure.ac
-loader/libtool
-loader/Makefile.*
-!loader/Makefile.fragments
+# Generated master key file - contains sensitive encryption keys
+/build/zypher_master_key.h
+/include/zypher_master_key.h
 
-# Test files and artifacts
-loader/tests/*.diff
-loader/tests/*.exp
-loader/tests/*.log
-loader/tests/*.out
-loader/tests/*.php
-loader/tests/*.sh
-loader/downloaded-run-tests.php
-loader/tmp-php.ini
-tests/*_encoded.php
-tests/test_*.php
-tests/test_*_encoded.php
-php_test_results_*
+# PHP extension configure artifacts
+/loader/acinclude.m4
+/loader/aclocal.m4
+/loader/autom4te.cache/
+/loader/config.h
+/loader/config.log
+/loader/config.status
+/loader/config.nice
+/loader/configure.in
+/loader/configure.ac
+/loader/.deps
+/loader/libtool
+/loader/mkinstalldirs
+/loader/run-tests.php
 
-# Compiled encoded files
-*.penc
+# Encoded test files
+/tests/*.encoded.php
+/tests/*.output.txt
 
-# OS specific files
-.DS_Store
-Thumbs.db
-desktop.ini
+# Binary files
+/zypher
+/loader/zypher.so
+/loader/zypher_debug.so
 
-# Editor folders and files
+# Editor files
 .idea/
 .vscode/
-*.sublime-*
 *.swp
 *.swo
-
-# Backup files
 *~
-*.bak
-*.backup
 
-# Logs and temp files
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows system files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Debug artifacts
 *.log
-temp/
-tmp/
+*.dSYM/
+core
+core.*
 
-# Local configuration
-php.ini.local
-local_settings.php
-
-# Dependency directories
-vendor/
-node_modules/
-tests/output
-
-composer.lock
-phpunit.xml
-.phpunit.cache
-*_encoded.php
-*.opcodes
+# Build system output files
+compile_commands.json

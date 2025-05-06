@@ -1,0 +1,21 @@
+-include zypher.dep
+zypher.lo: /Volumes/Work/zypher/loader/zypher.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/zypher.c -o zypher.lo  -MMD -MF zypher.dep -MT zypher.lo
+-include zypher_compile.dep
+zypher_compile.lo: /Volumes/Work/zypher/loader/zypher_compile.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/zypher_compile.c -o zypher_compile.lo  -MMD -MF zypher_compile.dep -MT zypher_compile.lo
+-include zypher_decrypt.dep
+zypher_decrypt.lo: /Volumes/Work/zypher/loader/zypher_decrypt.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/zypher_decrypt.c -o zypher_decrypt.lo  -MMD -MF zypher_decrypt.dep -MT zypher_decrypt.lo
+-include zypher_security.dep
+zypher_security.lo: /Volumes/Work/zypher/loader/zypher_security.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/zypher_security.c -o zypher_security.lo  -MMD -MF zypher_security.dep -MT zypher_security.lo
+-include zypher_utils.dep
+zypher_utils.lo: /Volumes/Work/zypher/loader/zypher_utils.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/zypher_utils.c -o zypher_utils.lo  -MMD -MF zypher_utils.dep -MT zypher_utils.lo
+$(phplibdir)/zypher.la: ./zypher.la
+	$(LIBTOOL) --tag=CC --mode=install cp ./zypher.la $(phplibdir)
+
+./zypher.la: $(shared_objects_zypher) $(ZYPHER_SHARED_DEPENDENCIES)
+	$(LIBTOOL) --tag=CC --mode=link $(CC) -shared $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS) $(LDFLAGS)  -o $@ -export-dynamic -avoid-version -prefer-pic -module -rpath $(phplibdir) $(EXTRA_LDFLAGS) $(shared_objects_zypher) $(ZYPHER_SHARED_LIBADD)
+

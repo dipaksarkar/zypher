@@ -4,14 +4,14 @@ top_srcdir = /Volumes/Work/zypher/loader
 top_builddir = /Volumes/Work/zypher/loader
 EGREP = /usr/bin/grep -E
 SED = /usr/bin/sed
-CONFIGURE_COMMAND = './configure' '--with-debug'
-CONFIGURE_OPTIONS = '--with-debug'
+CONFIGURE_COMMAND = './configure' '--with-php-config=php-config' '--with-openssl=/usr/local/opt/openssl'
+CONFIGURE_OPTIONS = '--with-php-config=php-config' '--with-openssl=/usr/local/opt/openssl'
 SHLIB_SUFFIX_NAME = dylib
 SHLIB_DL_SUFFIX_NAME = so
 AWK = awk
-ZYPHER_SHARED_LIBADD = -Wl,-rpath,/usr/local/lib -L/usr/local/lib -lcrypto -Wl,-rpath,/usr/local/lib -L/usr/local/lib -lssl
-shared_objects_zypher = src/main.lo src/decrypt.lo src/security.lo src/utils.lo
+shared_objects_zypher = zypher.lo zypher_compile.lo zypher_decrypt.lo zypher_security.lo zypher_utils.lo
 PHP_PECL_EXTENSION = zypher
+ZYPHER_SHARED_LIBADD = -Wl,-rpath,/usr/local/opt/openssl/lib -L/usr/local/opt/openssl/lib -lssl -Wl,-rpath,/usr/local/opt/openssl/lib -L/usr/local/opt/openssl/lib -lcrypto
 PHP_MODULES = $(phplibdir)/zypher.la
 PHP_ZEND_EX =
 all_targets = $(PHP_MODULES) $(PHP_ZEND_EX)
@@ -23,7 +23,7 @@ prefix = /usr/local/Cellar/php@8.3/8.3.19_1
 phplibdir = /Volumes/Work/zypher/loader/modules
 phpincludedir = /usr/local/Cellar/php@8.3/8.3.19_1/include/php
 CC = cc
-CFLAGS = -g -O2 -g -O0
+CFLAGS = -g -O2
 CFLAGS_CLEAN = $(CFLAGS) -D_GNU_SOURCE
 CPP = cc -E
 CPPFLAGS = -DHAVE_CONFIG_H
@@ -34,13 +34,13 @@ EXTENSION_DIR = /usr/local/Cellar/php@8.3/8.3.19_1/pecl/20230831
 PHP_EXECUTABLE = /usr/local/Cellar/php@8.3/8.3.19_1/bin/php
 EXTRA_LDFLAGS =
 EXTRA_LIBS =
-INCLUDES = -I/usr/local/Cellar/php@8.3/8.3.19_1/include/php -I/usr/local/Cellar/php@8.3/8.3.19_1/include/php/main -I/usr/local/Cellar/php@8.3/8.3.19_1/include/php/TSRM -I/usr/local/Cellar/php@8.3/8.3.19_1/include/php/Zend -I/usr/local/Cellar/php@8.3/8.3.19_1/include/php/ext -I/usr/local/Cellar/php@8.3/8.3.19_1/include/php/ext/date/lib -I/usr/local/include
+INCLUDES = -I/usr/local/Cellar/php@8.3/8.3.19_1/include/php -I/usr/local/Cellar/php@8.3/8.3.19_1/include/php/main -I/usr/local/Cellar/php@8.3/8.3.19_1/include/php/TSRM -I/usr/local/Cellar/php@8.3/8.3.19_1/include/php/Zend -I/usr/local/Cellar/php@8.3/8.3.19_1/include/php/ext -I/usr/local/Cellar/php@8.3/8.3.19_1/include/php/ext/date/lib -I/usr/local/opt/openssl/include
 LFLAGS =
 LDFLAGS =
 SHARED_LIBTOOL =
 LIBTOOL = $(SHELL) $(top_builddir)/libtool
 SHELL = /bin/sh
-INSTALL_HEADERS = ext/zypher/src/php_loader.h ext/zypher/src/main.h ext/zypher/src/decrypt.h ext/zypher/src/security.h ext/zypher/src/utils.h
+INSTALL_HEADERS =
 BUILD_CC = cc
 mkinstalldirs = $(top_srcdir)/build/shtool mkdir -p
 INSTALL = $(top_srcdir)/build/shtool install -c
@@ -205,18 +205,21 @@ prof-use:
 
 .PHONY: all clean install distclean test prof-gen prof-clean prof-use
 .NOEXPORT:
--include src/main.dep
-src/main.lo: /Volumes/Work/zypher/loader/src/main.c
-	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/src/main.c -o src/main.lo  -MMD -MF src/main.dep -MT src/main.lo
--include src/decrypt.dep
-src/decrypt.lo: /Volumes/Work/zypher/loader/src/decrypt.c
-	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/src/decrypt.c -o src/decrypt.lo  -MMD -MF src/decrypt.dep -MT src/decrypt.lo
--include src/security.dep
-src/security.lo: /Volumes/Work/zypher/loader/src/security.c
-	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/src/security.c -o src/security.lo  -MMD -MF src/security.dep -MT src/security.lo
--include src/utils.dep
-src/utils.lo: /Volumes/Work/zypher/loader/src/utils.c
-	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/src/utils.c -o src/utils.lo  -MMD -MF src/utils.dep -MT src/utils.lo
+-include zypher.dep
+zypher.lo: /Volumes/Work/zypher/loader/zypher.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/zypher.c -o zypher.lo  -MMD -MF zypher.dep -MT zypher.lo
+-include zypher_compile.dep
+zypher_compile.lo: /Volumes/Work/zypher/loader/zypher_compile.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/zypher_compile.c -o zypher_compile.lo  -MMD -MF zypher_compile.dep -MT zypher_compile.lo
+-include zypher_decrypt.dep
+zypher_decrypt.lo: /Volumes/Work/zypher/loader/zypher_decrypt.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/zypher_decrypt.c -o zypher_decrypt.lo  -MMD -MF zypher_decrypt.dep -MT zypher_decrypt.lo
+-include zypher_security.dep
+zypher_security.lo: /Volumes/Work/zypher/loader/zypher_security.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/zypher_security.c -o zypher_security.lo  -MMD -MF zypher_security.dep -MT zypher_security.lo
+-include zypher_utils.dep
+zypher_utils.lo: /Volumes/Work/zypher/loader/zypher_utils.c
+	$(LIBTOOL) --tag=CC --mode=compile $(CC) -I. -I/Volumes/Work/zypher/loader $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -DZEND_COMPILE_DL_EXT=1 -c /Volumes/Work/zypher/loader/zypher_utils.c -o zypher_utils.lo  -MMD -MF zypher_utils.dep -MT zypher_utils.lo
 $(phplibdir)/zypher.la: ./zypher.la
 	$(LIBTOOL) --tag=CC --mode=install cp ./zypher.la $(phplibdir)
 

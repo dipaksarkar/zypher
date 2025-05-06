@@ -1,313 +1,99 @@
-# GitHub Copilot Instructions for Zypher
+# Zypher Encoder/Loader Copilot Instructions
 
-## Project Overview
+## Project Context
 
-Zypher is a PHP source code encryption and licensing system that protects PHP code with AES-256-CBC encryption. The system consists of two main components:
+This is a PHP source code protection system called Zypher, similar to ionCube. It consists of:
 
-1. **PHP Extension (Loader)**: A C-based extension that decrypts and executes encoded PHP files at runtime
-2. **PHP Encoder**: A PHP script that encrypts source code files
+1. **Encoder**: A C binary that compiles PHP to opcodes, encrypts them with AES-256, and stores them in `.php` files
+2. **Loader**: A PHP extension (Zend Engine) that decrypts and executes the encoded files at runtime
 
-## Key Concepts
+The system works by:
+- Converting PHP source to opcodes using Zend APIs
+- Encrypting the opcodes with a master key generated at build time
+- Creating PHP files with encrypted content that can only be executed with the loader extension
 
-- **Encryption**: AES-256-CBC with derived keys for file-specific encryption
-- **Signatures**: Files are marked with `ZYPH01` to identify them as Zypher-encoded
-- **Obfuscation**: Several techniques including variable renaming, junk code injection, and string encryption
-- **Key Derivation**: HMAC-SHA256 based derivation with iteration for file-specific keys
-
-## Project Structure
+## System Structure
 
 ```
-/Volumes/Work/zypher/
-├── .github/
-│   └── copilot-instructions.md
-├── encoder/
-│   └── encode.php              # Main encoder script
-├── loader/                     # PHP extension (C code)
-│   ├── src/
-│   │   ├── decrypt.c           # Decryption implementation
-│   │   ├── decrypt.h           # Decryption header
-│   │   ├── main.c              # Extension main entry points
-│   │   ├── main.h              # Main header
-│   │   ├── php_loader.h        # PHP extension integration header
-│   │   ├── security.c          # Security-related functions
-│   │   ├── security.h          # Security header
-│   │   ├── utils.c             # Utility functions
-│   │   └── utils.h             # Utilities header
-│   ├── tests/                  # Extension tests
-│   │   ├── 001-extension-loading.phpt
-│   │   ├── 002-encoding-php-files.phpt
-│   │   ├── 003-stub-code-implementation.phpt
-│   │   ├── 004-php-extension-support.phpt
-│   │   ├── 005-signature-detection.phpt
-│   │   ├── 006-base64-decoding.phpt
-│   │   ├── 007-string-encryption.phpt
-│   │   ├── 008-string-decode.phpt
-│   │   ├── 009-obfuscation-support.phpt
-│   │   ├── 010-string-encryption-support.phpt
-│   │   ├── 011-junk-code-support.phpt
-│   │   ├── 012-shuffle-statements-support.phpt
-│   │   └── 013-combined-obfuscation-options.phpt
-│   ├── config.m4               # Build system configuration
-│   ├── configure               # Generated configure script
-│   ├── configure.ac            # Autoconf template
-│   ├── Makefile                # Generated makefile
-│   ├── Makefile.fragments      # Build fragments
-│   └── run-tests.php           # Test runner script
-├── tests/                      # Integration tests
-│   ├── advanced_encoded.php    # Encoded version of advanced.php
-│   ├── advanced.php            # Advanced test file
-│   ├── encoder_comprehensive_tests.php  # Full test suite
-│   ├── hello_encoded.php       # Encoded version of hello.php
-│   ├── hello.php               # Basic test file
-│   ├── run_tests.php           # Integration test runner
-│   └── signature_detection_test.php  # Tests for signature detection
-├── .gitignore
-├── php.ini                     # PHP configuration
-└── README.md                   # Project documentation
+zypher/
+├── build/               # Build artifacts and generated key (zypher_master_key.h)
+├── encoder/             # Encoder source files (main.c, encoder.c)
+├── include/             # Common header files for both encoder and loader
+├── loader/              # PHP extension loader implementation
+│   ├── include/         # Loader-specific headers
+│   └── modules/         # Compiled extension modules
+├── tests/               # Test files and scripts
+├── Makefile             # Build configuration
+└── README.md            # Project documentation
 ```
 
-## File Roles and Key Components
+## Key Components
 
-### Encoder
+1. **Master Key**: Generated during `make` in `build/zypher_master_key.h`
+2. **Encryption**: AES-256-CBC with derived keys based on filenames
+3. **File Format**: Encoded files have a signature marker (`ZYPHER:`) followed by base64 encrypted content
 
-- `encode.php`: Main encoder script that transforms PHP code into encrypted files
-  - Implements AES-256-CBC encryption
-  - Handles command line arguments and options
-  - Manages file processing and directory traversal
-  - Implements obfuscation techniques
+## Encoder Process Flow
 
-### Loader (PHP Extension)
+1. Parse source PHP file
+2. Compile to opcodes using `zend_compile_file()`
+3. Serialize opcodes
+4. Generate a file-specific key derived from the master key
+5. Encrypt serialized opcodes
+6. Store in output file with PHP stub
 
-- `decrypt.c/h`: Handles the decryption of encoded files
-- `main.c/h`: Main entry points and PHP extension integration
-- `security.c/h`: Implements security features like key validation
-- `utils.c/h`: Helper functions for file and string manipulation
-- `php_loader.h`: PHP extension API declarations
+## Loader Process Flow
 
-### Tests
+1. Hook `zend_compile_file()` to intercept PHP file loads
+2. Detect Zypher signature in file
+3. Extract encrypted content and metadata
+4. Decrypt using master key
+5. Deserialize opcodes
+6. Execute using Zend VM
 
-- `loader/tests/*.phpt`: PHPT format tests for the C extension
-- `tests/*.php`: PHP-based integration tests
-- `run_tests.php`: Test runners for automated testing
+## Security Features
 
-## Code Patterns
+- AES-256 encryption
+- File-specific derived keys
+- Anti-debugging measures
+- Domain and timestamp-based licensing
+- Byte rotation for additional obfuscation
+- Checksum verification
 
-### Encoder Command Line Arguments
+## Implementation Details
 
-The encoder accepts the following command-line arguments pattern:
+- The master key is embedded in both the encoder and loader at compile time
+- Key derivation uses HMAC-SHA256 with multiple iterations
+- File checksums ensure tamper protection
+- Code runs in PHP 7.2+ and 8.x environments
+- OpenSSL library is used for cryptographic operations
 
-```php
-php encode.php <source_path> [output_path] [--master-key=secret] [--obfuscate] [--string-encryption] [--junk-code] [--shuffle-stmts] [--exclude=pattern1,pattern2] [--quiet] [--verbose]
-```
+## Code Style and Patterns
 
-### Encoding Process
-
-The encoding process follows this pattern:
-
-```php
-// Read source file
-$source_content = file_get_contents($source_file);
-
-// Apply obfuscation if enabled
-if ($obfuscation_options['enabled']) {
-    $source_content = obfuscateCode($source_content, $options);
-}
-
-// Generate random file key
-$random_file_key = bin2hex(openssl_random_pseudo_bytes($length / 2));
-
-// Derive master key from file name
-$derived_key = deriveFileKey($master_key, $filename, $iterations);
-
-// Encrypt content
-$encrypted_content = openssl_encrypt($content, 'AES-256-CBC', $key, $options, $iv);
-
-// Combine with header information
-$final_content = $header . $encrypted_content;
-
-// Add Zypher signature
-$encoded_file = $stub . ZYPHER_SIGNATURE . $encoded_content;
-```
-
-### C Extension Patterns
-
-#### Extension Registration
-
-```c
-PHP_MINIT_FUNCTION(zypher)
-{
-    // Initialize extension resources
-    return SUCCESS;
-}
-
-PHP_MSHUTDOWN_FUNCTION(zypher)
-{
-    // Clean up resources
-    return SUCCESS;
-}
-
-PHP_MINFO_FUNCTION(zypher)
-{
-    // Display extension information
-    php_info_print_table_start();
-    php_info_print_table_row(2, "Zypher support", "enabled");
-    php_info_print_table_row(2, "Version", PHP_ZYPHER_VERSION);
-    php_info_print_table_end();
-}
-
-PHP_RINIT_FUNCTION(zypher)
-{
-    // Request initialization
-    return SUCCESS;
-}
-
-PHP_RSHUTDOWN_FUNCTION(zypher)
-{
-    // Request shutdown
-    return SUCCESS;
-}
-```
-
-#### File Decoding Functions
-
-```c
-static int decode_zypher_file(const char *filename, char **decoded_content, size_t *decoded_size)
-{
-    // 1. Read the file
-    // 2. Check for Zypher signature
-    // 3. Extract metadata (version, IVs, etc.)
-    // 4. Derive the key
-    // 5. Decrypt the content
-    // 6. Return the decoded content
-}
-```
-
-#### String Decryption Functions
-
-```c
-PHP_FUNCTION(zypher_decode_string)
-{
-    char *encoded_string;
-    size_t encoded_len;
-    char *key;
-    size_t key_len;
-    
-    // Parse arguments
-    if (zend_parse_parameters(ZEND_NUM_ARGS(), "ss", &encoded_string, &encoded_len, &key, &key_len) == FAILURE) {
-        RETURN_FALSE;
-    }
-    
-    // Decrypt string
-    // Return decrypted result
-}
-```
-
-### PHPT Test Structure
-
-PHPT tests follow this pattern:
-
-```
---TEST--
-Description of the test
---SKIPIF--
-<?php
-if (!extension_loaded('zypher')) die('skip: zypher extension not available');
-?>
---FILE--
-<?php
-// Test code
-?>
---EXPECT--
-Expected output
-```
-
-### Integration Tests
-
-```php
-// Create test PHP file
-$testFile = $testDir . '/test_feature.php';
-$outputFile = $testDir . '/test_feature_encoded.php';
-
-// Create test content
-file_put_contents($testFile, '<?php /* test code */ ?>');
-
-// Encode with specific options
-$output = shell_exec("php $encoderPath $testFile $outputFile --option1 --option2 2>&1");
-
-// Test verification
-$verification = /* verification logic */;
-```
+- Error handling uses return codes throughout
+- Memory management follows proper allocation/freeing patterns
+- Zend API is used for PHP integration
+- Debug utilities are conditionally compiled based on build flags
 
 ## Common Tasks
 
-### 1. Adding New Obfuscation Technique
+- **Adding features**: Modify both encoder.c and its corresponding loader implementation
+- **Security fixes**: Update both encryption and decryption methods
+- **PHP compatibility**: Test with target PHP versions
+- **Performance tuning**: Review opcode handling and decryption process
 
-When adding a new obfuscation technique:
+## Testing
 
-1. Add a new command line option in the argument parsing section of `encode.php`
-2. Add a new option in the `$obfuscation_options` array
-3. Implement the technique in the `obfuscateCode()` function
-4. Update the loader to handle the obfuscated code if necessary
-5. Add appropriate tests in the test suite:
-   - Unit tests in `loader/tests/`
-   - Integration tests in `tests/`
+Test files are in `/tests` directory:
+- `basic.php`: Simple class implementation to verify encoding works
+- `advanced.php`: Tests namespaces, typed properties, and complex functionality
+- `run.sh`: Automated test script that compares original vs encoded outputs
 
-### 2. Modifying Encryption Format
+## Makefile Targets
 
-When modifying the encryption format:
-
-1. Increment the version byte in the encoder (`encode.php`)
-2. Update the format structure comment to reflect changes
-3. Update the decryption logic in `loader/src/decrypt.c` to handle the new format
-4. Ensure backward compatibility with previous versions
-5. Add tests for both the new format and backward compatibility
-
-### 3. Adding Command Line Options
-
-When adding new command line options:
-
-1. Add option parsing in the arguments loop in `encode.php`
-2. Update the help text in the usage instructions
-3. Update the README.md documentation
-4. Create tests that verify the new option works correctly
-
-### 4. Adding C Extension Functions
-
-When adding new functions to the PHP extension:
-
-1. Declare the function in `php_loader.h`
-2. Implement the function in an appropriate C file
-3. Add the function to the function entry array in `main.c`
-4. Update extension documentation
-5. Add tests for the new functionality
-
-### 5. Adding Tests
-
-When adding tests:
-
-1. For PHP extension tests:
-   - Create a new `.phpt` file in the `loader/tests/` directory
-   - Follow the PHPT format (--TEST--, --SKIPIF--, --FILE--, --EXPECT--)
-   
-2. For integration tests:
-   - Add a new test function to `tests/encoder_comprehensive_tests.php`
-   - Or create a new test file in the `tests/` directory
-   - Use the helper functions for file creation and verification
-
-## Best Practices
-
-1. **Security First**: All changes should prioritize security over convenience
-2. **Backward Compatibility**: Maintain compatibility with previously encoded files
-3. **Error Handling**: Provide clear error messages and fail safely
-4. **Documentation**: Update comments and README when changing functionality
-5. **Testing**: Every new feature or change should have corresponding tests
-6. **Performance**: Consider the performance impact of cryptographic operations
-
-## Notes
-
-- The `DEBUG` constant in encode.php should be `false` in production
-- The default master key should never be used in production
-- Always verify encoded files can be decoded properly before deployment
-- Consider performance implications of key derivation iterations
-- When working with C code, be careful about memory management to prevent leaks
-- Test the extension on multiple PHP versions to ensure compatibility
+- `make`: Builds everything
+- `make encoder`: Builds only the encoder binary
+- `make loader`: Builds the PHP extension
+- `make debug_loader`: Builds a version with debug output
+- `make install`: Installs the extension
+- `make test`: Runs basic tests
