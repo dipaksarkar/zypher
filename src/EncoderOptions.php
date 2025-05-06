@@ -38,6 +38,15 @@ class EncoderOptions
     ];
 
     /**
+     * @var array Opcode compilation options
+     */
+    public $opcodes = [
+        'enabled' => true,      // Default to using opcodes
+        'format_version' => Constants::FORMAT_VERSION,
+        'format_type' => Constants::FORMAT_OPCODE
+    ];
+
+    /**
      * @var array Patterns for files to exclude
      */
     public $excludePatterns = [];
@@ -72,6 +81,12 @@ class EncoderOptions
             } elseif ($args[$i] === '--string-encryption') {
                 $this->obfuscation['string_encryption'] = true;
                 $this->obfuscation['enabled'] = true; // Auto-enable obfuscation
+            } elseif ($args[$i] === '--no-opcodes') {
+                $this->opcodes['enabled'] = false;
+                $this->opcodes['format_type'] = Constants::FORMAT_SOURCE;
+            } elseif ($args[$i] === '--opcodes') {
+                $this->opcodes['enabled'] = true;
+                $this->opcodes['format_type'] = Constants::FORMAT_OPCODE;
             }
         }
     }

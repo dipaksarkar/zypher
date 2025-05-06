@@ -13,6 +13,36 @@ namespace Zypher;
 class Constants
 {
     /**
+     * Current version of Zypher
+     */
+    const VERSION = '2.0.0';
+
+    /**
+     * Format version of encoded files
+     */
+    const FORMAT_VERSION = 2;
+
+    /**
+     * Format type for source code encoding
+     */
+    const FORMAT_SOURCE = 1;
+
+    /**
+     * Format type for opcode encoding
+     */
+    const FORMAT_OPCODE = 2;
+
+    /**
+     * Get the current version
+     * 
+     * @return string The current version
+     */
+    public static function getVersion(): string
+    {
+        return self::VERSION;
+    }
+
+    /**
      * Get the master key from the environment or fall back to a default
      * WARNING: The default should never be used in production
      * 
@@ -32,6 +62,6 @@ class Constants
      */
     public static function getSignature(): string
     {
-        return 'Z' . 'Y' . 'P' . 'H' . '0' . '1';
+        return 'Z' . 'Y' . 'P' . 'H' . '0' . '2';
     }
 }

@@ -4,7 +4,7 @@
 extern zend_module_entry zypher_module_entry;
 #define phpext_zypher_ptr &zypher_module_entry
 
-#define PHP_ZYPHER_VERSION "1.3.0"
+#define PHP_ZYPHER_VERSION "2.0.0"
 
 /* For compatibility with PHP thread safety */
 #ifdef ZTS
@@ -17,6 +17,7 @@ char *license_domain;               /* Licensed domain */
 time_t license_expiry;              /* License expiration timestamp */
 unsigned char anti_tamper_hash[32]; /* Hash to verify extension integrity */
 int self_healing;                   /* Enable self-healing code */
+HashTable *opcode_cache;            /* Cache for decoded opcodes */
 ZEND_END_MODULE_GLOBALS(zypher)
 
 /* Define debug macro - use compile-time flag instead of runtime configuration */
@@ -37,15 +38,19 @@ ZEND_END_MODULE_GLOBALS(zypher)
 
 /* Define a master key constant (used to decrypt per-file keys) */
 #define ZYPHER_MASTER_KEY "Zypher-Master-Key-X7pQ9r2s"
-#define ZYPHER_SIGNATURE "ZYPH01"
+#define ZYPHER_SIGNATURE "ZYPH02" // Updated to version 2
 #define SIGNATURE_LENGTH 6
 #define IV_LENGTH 16
 #define KEY_LENGTH 32
 #define MAX_KEY_ITERATIONS 5000
 
-/* File format version */
-#define ZYPHER_FORMAT_VERSION 1
-#define BYTE_ROTATION_OFFSET 7 /* Ensure this matches the encoder's rotation value */
+/* File format versions */
+#define ZYPHER_FORMAT_VERSION_V1 1
+#define ZYPHER_FORMAT_VERSION_V2 2
+
+/* Format types */
+#define ZYPHER_FORMAT_SOURCE 1
+#define ZYPHER_FORMAT_OPCODE 2
 
 /* Define security flags */
 #define ZYPHER_FLAG_EXPIRE 0x0001      /* Content has expiry date */
@@ -67,6 +72,7 @@ ZEND_END_MODULE_GLOBALS(zypher)
 #define ZYPHER_ERR_DECRYPT_FAILED 2
 #define ZYPHER_ERR_INTEGRITY 3
 #define ZYPHER_ERR_DEBUGGER 6
+#define ZYPHER_ERR_OPCODE 7
 
 /* Access extension globals */
 #ifdef ZTS
@@ -85,6 +91,10 @@ int zypher_verify_license(const char *domain, time_t timestamp);
 void zypher_derive_key(const char *master_key, const char *filename, char *output_key, int iterations);
 int verify_content_integrity(const char *content, size_t length, const char *expected_checksum);
 void calculate_content_checksum(const char *content, size_t length, char *output);
+
+/* Opcode handling functions */
+zend_op_array *zypher_load_opcodes(zval *opcodes, zend_string *filename);
+void zypher_free_opcode_cache(void);
 
 /* PHP functions exported by the extension */
 PHP_FUNCTION(zypher_decode_string);

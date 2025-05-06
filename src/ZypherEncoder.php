@@ -26,6 +26,11 @@ class ZypherEncoder
     private $obfuscator;
 
     /**
+     * @var OpcodeCompiler
+     */
+    private $opcodeCompiler;
+
+    /**
      * @var array Statistics of processing
      */
     private $stats = [
@@ -49,6 +54,7 @@ class ZypherEncoder
         }
 
         $this->obfuscator = new Obfuscator();
+        $this->opcodeCompiler = new OpcodeCompiler($options->verboseMode);
     }
 
     /**
@@ -252,7 +258,11 @@ class ZypherEncoder
                 'junk_code' => $this->options->obfuscation['junk_code']
             ]);
 
-            file_put_contents($source_file . '.bak', $source_content);
+            // Create a backup if in verbose mode
+            if ($this->options->verboseMode) {
+                file_put_contents($source_file . '.bak', $source_content);
+                echo "DEBUG: Created backup of obfuscated source at {$source_file}.bak\n";
+            }
 
             if ($this->options->verboseMode) {
                 echo "DEBUG: Code obfuscation completed for $source_file.\n";
@@ -292,16 +302,45 @@ class ZypherEncoder
             echo "DEBUG: Derived master key: $derived_master_key (length: " . strlen($derived_master_key) . ")\n";
         }
 
+        // Prepare content for encryption
+        $content_to_encrypt = '';
+        $format_type = $this->options->opcodes['format_type'];
+
+        if ($this->options->opcodes['enabled']) {
+            echo "Compiling PHP to opcodes for $source_file...\n";
+            // Compile PHP to opcodes before encryption
+            $opcodes = $this->opcodeCompiler->compileToOpcodes($source_content, $base_filename);
+
+            if (!$opcodes) {
+                echo "Error: Failed to compile PHP to opcodes. Falling back to source code.\n";
+                // Fallback to source code
+                $content_to_encrypt = $source_content;
+                $format_type = Constants::FORMAT_SOURCE;
+            } else {
+                $content_to_encrypt = $opcodes;
+                echo "Successfully compiled to opcodes.\n";
+
+                if ($this->options->verboseMode) {
+                    echo "DEBUG: Opcode size: " . strlen($content_to_encrypt) . " bytes\n";
+                }
+            }
+        } else {
+            // Use source code directly
+            $content_to_encrypt = $source_content;
+            $format_type = Constants::FORMAT_SOURCE;
+        }
+
         // Add checksum for integrity checking - helps detect tampering
-        $checksum = md5($source_content);
+        $checksum = md5($content_to_encrypt);
 
         // Integrity: Add timestamp to prevent replay attacks if that were a concern
         $timestamp = time();
         $timestamp_bytes = pack("N", $timestamp);
 
-        // Add version marker for future compatibility
-        $version = 1; // Version of the encoding format
+        // Add version and format type markers for future compatibility
+        $version = $this->options->opcodes['format_version'];
         $version_byte = chr($version);
+        $format_type_byte = chr($format_type);
 
         // Encrypt the random file key with the derived master key
         $encrypted_file_key = openssl_encrypt(
@@ -324,7 +363,7 @@ class ZypherEncoder
         }
 
         // Now include checksum in the content to be encrypted
-        $content_to_encrypt = $checksum . $source_content;
+        $content_to_encrypt = $checksum . $content_to_encrypt;
 
         // Encrypt the file content using the random file key
         $encrypted_content = openssl_encrypt(
@@ -347,6 +386,7 @@ class ZypherEncoder
 
         // Enhanced Format:
         // - 1 byte: version marker
+        // - 1 byte: format type (1 = source, 2 = opcode)
         // - 4 bytes: timestamp (for anti-replay)
         // - 16 bytes: content IV
         // - 16 bytes: key IV
@@ -364,13 +404,14 @@ class ZypherEncoder
 
         if ($this->options->verboseMode) {
             echo "DEBUG: Including original filename '$orig_filename' (length: $filename_length) for key derivation\n";
-            echo "DEBUG: Added version marker: $version\n";
+            echo "DEBUG: Format version: $version\n";
+            echo "DEBUG: Format type: $format_type (" . ($format_type == Constants::FORMAT_OPCODE ? "opcode" : "source") . ")\n";
             echo "DEBUG: Added timestamp: $timestamp\n";
             echo "DEBUG: Added content checksum: $checksum\n";
         }
 
         // Pack everything together with new format elements
-        $final_content = $version_byte . $timestamp_bytes . $content_iv . $key_iv .
+        $final_content = $version_byte . $format_type_byte . $timestamp_bytes . $content_iv . $key_iv .
             $key_length_bytes . $encrypted_file_key .
             chr($filename_length) . $orig_filename . $encrypted_content;
 
@@ -421,6 +462,7 @@ EOT;
         echo "File encoded successfully!\n";
         echo "Source: $source_file\n";
         echo "Encoded file: $output_file\n";
+        echo "Encoding type: " . ($format_type == Constants::FORMAT_OPCODE ? "PHP Opcodes" : "Source Code") . "\n";
         echo "Encryption: AES-256-CBC with secure key derivation and two-layer encryption\n";
 
         if ($this->options->obfuscation['enabled']) {
