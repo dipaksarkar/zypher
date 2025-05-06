@@ -2,8 +2,8 @@
 Zypher obfuscation support
 --SKIPIF--
 <?php
-if (!file_exists(dirname(__DIR__) . '/modules/zypher.so')) {
-    die('skip: zypher.so extension file not found');
+if (!extension_loaded('zypher')) {
+    die('skip: zypher extension not loaded');
 }
 ?>
 --FILE--
@@ -40,7 +40,7 @@ echo "Sum: " . add(5, 10) . "\n";
 echo "Test completed.\n";
 ?>');
 
-// Encode the file with junk-code option, explicitly using the extension
+// Encode the file with obfuscate & junk-code option
 $command = sprintf(
     'php "%s" "%s" "%s" --obfuscate --junk-code',
     $encoderPath,

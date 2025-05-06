@@ -2,8 +2,8 @@
 Zypher junk code insertion support
 --SKIPIF--
 <?php
-if (!file_exists(dirname(__DIR__) . '/modules/zypher.so')) {
-    die('skip: zypher.so extension file not found');
+if (!extension_loaded('zypher')) {
+    die('skip: zypher extension not loaded');
 }
 ?>
 --FILE--
@@ -40,7 +40,7 @@ echo "Sum: " . add(5, 10) . "\n";
 echo "Test completed.\n";
 ?>');
 
-// Encode the file with junk-code option, explicitly using the extension
+// Encode the file with junk-code option
 $command = sprintf(
     'php "%s" "%s" "%s" --obfuscate --junk-code',
     $encoderPath,
@@ -70,11 +70,11 @@ echo "--------------------\n";
 $originalOutput = shell_exec("php $testFile");
 echo $originalOutput . "\n";
 
-// Run the encoded file without explicitly loading the extension (since it's already installed)
+// Run the encoded file
+// The extension should already be loaded system-wide
 echo "Running encoded file:\n";
 echo "-------------------\n";
-$runCommand = "php $encodedFile 2>&1";
-$encodedOutput = shell_exec($runCommand);
+$encodedOutput = shell_exec("php $encodedFile 2>&1");
 
 // Handle null output with a better check
 if ($encodedOutput === null) {
