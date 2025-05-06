@@ -361,7 +361,13 @@ zend_op_array *zypher_compile_file(zend_file_handle *file_handle, int type)
 
         /* Clean up */
         zval_ptr_dtor(&source_string);
-        efree(decoded);
+
+        /* Zero out sensitive memory before freeing it for enhanced security */
+        if (decoded)
+        {
+            memset(decoded, 0, decoded_len);
+            efree(decoded);
+        }
 
         if (!op_array)
         {
