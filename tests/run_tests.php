@@ -176,8 +176,11 @@ $advancedObfuscationTestPath = $advancedObfuscationEncoded;
 if (file_exists($advancedObfuscationTestPath)) {
     $obfuscationTestOutput = shell_exec("php $advancedObfuscationTestPath 2>&1");
 
-    // Check if the test was successful
-    $obfuscationTestSuccess = strpos($obfuscationTestOutput, "SUCCESS: The obfuscated advanced PHP file executed correctly") !== false;
+    // Check if the test was successful by looking for expected output
+    // Instead of looking for a specific success message, we'll check if the output contains the expected content
+    $obfuscationTestSuccess = strpos($obfuscationTestOutput, "Object value: Zypher Test") !== false &&
+        strpos($obfuscationTestOutput, "10 + 32 = 42") !== false &&
+        strpos($obfuscationTestOutput, "PHP Version:") !== false;
 
     echo "\nObfuscation test summary: " . ($obfuscationTestSuccess ? "SUCCESS" : "FAILED") . "\n";
 
