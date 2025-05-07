@@ -1,0 +1,86 @@
+services:
+    zypher:
+        container_name: zypher
+        build:
+            context: .
+            dockerfile: Dockerfile
+        volumes:
+            - ./:/zypher
+        working_dir: /zypher
+        command: [ "make" ]
+
+    test:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        volumes:
+            - ./:/zypher
+        working_dir: /zypher
+        command: [ "make", "test" ]
+
+    # Run any make command using this service
+    make:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        volumes:
+            - ./:/zypher
+        working_dir: /zypher
+        entrypoint: [ "make" ]
+
+    # Encoder runner service
+    encoder:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        volumes:
+            - ./:/zypher
+        working_dir: /zypher
+        entrypoint: [ "./zypher" ]
+
+    # Interactive shell for development
+    shell:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        volumes:
+            - ./:/zypher
+        working_dir: /zypher
+        entrypoint: [ "/bin/bash" ]
+
+    # Common Makefile targets as named services
+    install:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        volumes:
+            - ./:/zypher
+        working_dir: /zypher
+        command: [ "make", "install" ]
+
+    debug_loader:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        volumes:
+            - ./:/zypher
+        working_dir: /zypher
+        command: [ "make", "debug_loader" ]
+
+    info:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        volumes:
+            - ./:/zypher
+        working_dir: /zypher
+        command: [ "make", "info" ]
+
+    clean:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        volumes:
+            - ./:/zypher
+        working_dir: /zypher
+        command: [ "make", "clean" ]

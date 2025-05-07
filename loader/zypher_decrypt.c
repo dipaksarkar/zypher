@@ -112,6 +112,7 @@ int extract_file_metadata(const char *encoded_content, size_t encoded_length,
 {
     zend_string *decoded_str;
     const char *signature_pos;
+    const char *data_start;
 
     /* Find Zypher signature anywhere in the file, not just at the beginning */
     signature_pos = strstr(encoded_content, ZYPHER_SIGNATURE);
@@ -127,10 +128,39 @@ int extract_file_metadata(const char *encoded_content, size_t encoded_length,
         php_printf("DEBUG: Found signature at offset %zu\n", (size_t)(signature_pos - encoded_content));
     }
 
-    /* Base64 decode the content after signature */
+    /* Always skip the entire line containing the signature and padding */
+    const char *newline_pos = strchr(signature_pos, '\n');
+    if (newline_pos)
+    {
+        /* Start decoding from the line after the signature */
+        data_start = newline_pos + 1;
+    }
+    else
+    {
+        /* If no newline is found, this is an error - we expect signature on its own line */
+        if (DEBUG)
+            php_printf("DEBUG: Missing newline after signature. Invalid file format.\n");
+        return ZYPHER_ERR_INVALID_FILE;
+    }
+
+    if (DEBUG)
+    {
+        php_printf("DEBUG: Skipping signature line, starting decode at offset %zu\n",
+                   (size_t)(data_start - encoded_content));
+    }
+
+    /* Base64 decode the content after signature and padding */
+    size_t remaining_length = encoded_length - (data_start - encoded_content);
+    if (remaining_length <= 0)
+    {
+        if (DEBUG)
+            php_printf("DEBUG: No Base64 content found after signature line\n");
+        return ZYPHER_ERR_INVALID_FILE;
+    }
+
     decoded_str = php_base64_decode(
-        (const unsigned char *)signature_pos + SIGNATURE_LENGTH,
-        encoded_length - ((size_t)(signature_pos - encoded_content) + SIGNATURE_LENGTH));
+        (const unsigned char *)data_start,
+        remaining_length);
 
     if (!decoded_str)
     {

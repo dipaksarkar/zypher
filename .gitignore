@@ -71,3 +71,4 @@ compile_commands.json
 /tests/*.out
 *.encoded.php
 *.php.opcode
+*.php.*

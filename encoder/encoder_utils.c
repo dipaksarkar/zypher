@@ -1,260 +1,312 @@
-/**
- * Zypher PHP Encoder - Utility functionality
- * Provides helper functions for file operations and encoding
- */
+/*
+  +----------------------------------------------------------------------+
+  | Zypher PHP Encoder                                                    |
+  +----------------------------------------------------------------------+
+  | Copyright (c) 2023-2025 Zypher Team                                  |
+  +----------------------------------------------------------------------+
+  | This source file is subject to version 3.01 of the PHP license,      |
+  | that is bundled with this package in the file LICENSE, and is        |
+  | available through the world-wide-web at the following url:           |
+  | http://www.php.net/license/3_01.txt                                  |
+  | If you did not receive a copy of the PHP license and are unable to   |
+  | obtain it through the world-wide-web, please send a note to          |
+  | license@php.net so we can mail you a copy immediately.               |
+  +----------------------------------------------------------------------+
+  | Author: Zypher Team <info@zypher.com>                                |
+  +----------------------------------------------------------------------+
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <errno.h>
-#include <time.h>
+#include <stdarg.h>
+#include <fcntl.h>
 
 /* Common headers */
 #include "../include/zypher_encoder.h"
 #include "../include/zypher_common.h"
 
-/* External debug function */
+/* Forward declarations */
 extern void print_debug(const char *format, ...);
 extern void print_error(const char *format, ...);
 
-/* Helper function to read a file into memory */
+/* Buffer for temporary calculations */
+static char error_buffer[8192];
+
+/* Read file contents */
 char *read_file_contents(const char *filename, size_t *size)
 {
     FILE *fp;
-    char *contents;
+    char *buffer = NULL;
     size_t file_size;
     struct stat st;
-
-    /* Get file size */
-    if (stat(filename, &st) != 0)
-    {
-        print_error("Error accessing file %s: %s", filename, strerror(errno));
-        return NULL;
-    }
-
-    file_size = st.st_size;
-    if (file_size <= 0)
-    {
-        print_error("File %s is empty", filename);
-        return NULL;
-    }
 
     /* Open the file */
     fp = fopen(filename, "rb");
     if (!fp)
     {
-        print_error("Error opening file %s: %s", filename, strerror(errno));
+        snprintf(error_buffer, sizeof(error_buffer), "Failed to open file: %s (%s)",
+                 filename, strerror(errno));
+        print_error("%s", error_buffer);
         return NULL;
     }
 
-    /* Allocate memory for file contents */
-    contents = (char *)malloc(file_size + 1);
-    if (!contents)
+    /* Get file size */
+    if (stat(filename, &st) == 0)
     {
-        print_error("Error allocating memory for file contents");
-        fclose(fp);
-        return NULL;
+        file_size = st.st_size;
     }
-
-    /* Read the file */
-    if (fread(contents, 1, file_size, fp) != file_size)
+    else
     {
-        print_error("Error reading file %s: %s", filename, strerror(errno));
         fclose(fp);
-        free(contents);
+        print_error("Failed to determine file size: %s", filename);
         return NULL;
     }
 
-    /* Add null terminator */
-    contents[file_size] = '\0';
+    /* Allocate buffer for file contents */
+    buffer = (char *)malloc(file_size + 1);
+    if (!buffer)
+    {
+        fclose(fp);
+        print_error("Failed to allocate memory for file contents");
+        return NULL;
+    }
 
-    /* Close file */
+    /* Read file contents */
+    if (fread(buffer, 1, file_size, fp) != file_size)
+    {
+        fclose(fp);
+        free(buffer);
+        print_error("Failed to read file contents: %s", filename);
+        return NULL;
+    }
+
+    /* Null terminate the buffer */
+    buffer[file_size] = '\0';
+
+    /* Close the file */
     fclose(fp);
 
-    /* Set size if requested */
+    /* Set the size if requested */
     if (size)
     {
         *size = file_size;
     }
 
-    return contents;
+    return buffer;
 }
 
-/* Helper function to run shell commands */
+/* Execute a command and capture its output */
 char *run_command(const char *command, size_t *output_size)
 {
-    FILE *pipe;
+    FILE *fp;
+    char buffer[4096];
+    size_t total_size = 0;
+    size_t buffer_size = 4096;
+    size_t bytes_read;
     char *output = NULL;
-    char buffer[1024];
-    size_t capacity = 0;
-    size_t size = 0;
+    char *new_output;
 
-    /* Open pipe for command */
-    pipe = popen(command, "r");
-    if (!pipe)
+    if (!command || !output_size)
     {
-        print_error("Error executing command: %s", command);
+        print_error("Invalid parameters for command execution");
         return NULL;
     }
 
-    /* Read output */
-    while (fgets(buffer, sizeof(buffer), pipe) != NULL)
-    {
-        size_t len = strlen(buffer);
+    *output_size = 0;
 
-        /* Resize the output buffer if needed */
-        if (size + len >= capacity)
+    /* Open process */
+    fp = popen(command, "r");
+    if (!fp)
+    {
+        print_error("Failed to execute command: %s", command);
+        return NULL;
+    }
+
+    /* Allocate output buffer */
+    output = (char *)malloc(buffer_size);
+    if (!output)
+    {
+        pclose(fp);
+        print_error("Failed to allocate memory for command output");
+        return NULL;
+    }
+
+    /* Read command output */
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), fp)) > 0)
+    {
+        /* Check if we need to resize the output buffer */
+        if (total_size + bytes_read >= buffer_size)
         {
-            capacity = capacity == 0 ? 1024 : capacity * 2;
-            char *new_output = realloc(output, capacity);
+            buffer_size *= 2;
+            new_output = (char *)realloc(output, buffer_size);
             if (!new_output)
             {
-                print_error("Error allocating memory for command output");
                 free(output);
-                pclose(pipe);
+                pclose(fp);
+                print_error("Failed to resize output buffer");
                 return NULL;
             }
             output = new_output;
         }
 
-        /* Append to output */
-        memcpy(output + size, buffer, len);
-        size += len;
+        /* Copy the data to the output buffer */
+        memcpy(output + total_size, buffer, bytes_read);
+        total_size += bytes_read;
     }
 
-    /* Close pipe and check status */
-    int status = pclose(pipe);
-    if (status != 0)
+    /* Null terminate the output */
+    if (total_size < buffer_size)
     {
-        print_error("Command failed with status %d", status);
-        free(output);
-        return NULL;
+        output[total_size] = '\0';
     }
-
-    /* Add null terminator */
-    if (output)
+    else
     {
-        if (size + 1 >= capacity)
+        /* Resize to make space for null terminator */
+        new_output = (char *)realloc(output, total_size + 1);
+        if (new_output)
         {
-            char *new_output = realloc(output, size + 1);
-            if (new_output)
-            {
-                output = new_output;
-            }
-        }
-        output[size] = '\0';
-
-        if (output_size)
-        {
-            *output_size = size;
+            output = new_output;
+            output[total_size] = '\0';
         }
     }
+
+    /* Close the process */
+    pclose(fp);
+
+    /* Set the output size */
+    *output_size = total_size;
 
     return output;
 }
 
-/* Base64 encode binary data */
-char *base64_encode(const unsigned char *input, size_t length)
-{
-    static const char base64_chars[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    /* Calculate output size with padding */
-    size_t output_length = 4 * ((length + 2) / 3);
-    char *output = malloc(output_length + 1);
-
-    if (!output)
-        return NULL;
-
-    /* Process input 3 bytes at a time */
-    size_t i = 0;
-    size_t j = 0;
-
-    while (i < length)
-    {
-        uint32_t octet_a = i < length ? input[i++] : 0;
-        uint32_t octet_b = i < length ? input[i++] : 0;
-        uint32_t octet_c = i < length ? input[i++] : 0;
-
-        uint32_t triple = (octet_a << 16) + (octet_b << 8) + octet_c;
-
-        output[j++] = base64_chars[(triple >> 18) & 0x3F];
-        output[j++] = base64_chars[(triple >> 12) & 0x3F];
-        output[j++] = base64_chars[(triple >> 6) & 0x3F];
-        output[j++] = base64_chars[triple & 0x3F];
-    }
-
-    /* Add padding if needed */
-    switch (length % 3)
-    {
-    case 1:
-        output[output_length - 2] = '=';
-        output[output_length - 1] = '=';
-        break;
-    case 2:
-        output[output_length - 1] = '=';
-        break;
-    }
-
-    output[output_length] = '\0';
-    return output;
-}
-
-/* Create a stub PHP file with encoded data */
+/* Create the final output file with PHP stub and encoded content */
 int create_stub_file(const char *filename, const char *encoded_content, size_t content_len,
                      const zypher_encoder_options *options)
 {
-    FILE *fp = fopen(filename, "wb");
+    FILE *fp;
+    static const char *stub = "<?php\n"
+                              "if(!extension_loaded('zypher')){die('The file '.__FILE__."
+                              "\" is corrupted.\\n\\nScript error: the \"."
+                              "((php_sapi_name()=='cli') ?'Zypher':'<a href=\\\"https://www.zypher.com\\\">Zypher</a>')."
+                              "\" Loader for PHP needs to be installed.\\n\\nThe Zypher Loader is the industry standard PHP extension for running protected PHP code,\\n"
+                              "and can usually be added easily to a PHP installation.\\n\\nFor Loaders please visit\"."
+                              "((php_sapi_name()=='cli')?\":\\n\\nhttps://get-loader.zypher.com\\n\\nFor\":' <a href=\\\"https://get-loader.zypher.com\\\">get-loader.zypher.com</a> and for')."
+                              "\" an instructional video please see\"."
+                              "((php_sapi_name()=='cli')?\":\\n\\nhttp://zypher.be/LV\\n\\n\":' <a href=\\\"http://zypher.be/LV\\\">http://zypher.be/LV</a> ')."
+                              "\"\");}exit(0);\n"
+                              "?>\n";
+
+    /* Calculate line length from encoded content's first line */
+    int content_line_length = 0;
+    const char *newline = strchr(encoded_content, '\n');
+    if (newline)
+    {
+        content_line_length = (int)(newline - encoded_content);
+    }
+    else
+    {
+        /* Default length if no newline found */
+        content_line_length = 76;
+    }
+
+    /* Make sure we have at least SIGNATURE_LENGTH + 1 for "+" */
+    if (content_line_length < SIGNATURE_LENGTH + 1)
+    {
+        content_line_length = 76; /* Default standard Base64 line length */
+    }
+
+    char padded_signature[content_line_length + 1];
+
+    /* Create signature with random Base64-like padding */
+    int pos = 0;
+    memcpy(padded_signature + pos, ZYPHER_SIGNATURE, SIGNATURE_LENGTH);
+    pos += SIGNATURE_LENGTH;
+
+    /* Add '+' character right after ZYPH01 */
+    if (pos < content_line_length)
+    {
+        padded_signature[pos++] = '+';
+    }
+
+    /* Base64 character set (without '+') */
+    const char *base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/";
+    int base64_chars_len = strlen(base64_chars);
+
+    /* Fill the rest with random Base64-like characters */
+    while (pos < content_line_length)
+    {
+        /* Generate a random index into the Base64 character set */
+        int random_index = rand() % base64_chars_len;
+        padded_signature[pos++] = base64_chars[random_index];
+    }
+    padded_signature[content_line_length] = '\0';
+
+    if (!filename || !encoded_content)
+    {
+        print_error("Invalid parameters for stub file creation");
+        return ZYPHER_FAILURE;
+    }
+
+    fp = fopen(filename, "w");
     if (!fp)
     {
-        print_error("Error creating output file %s: %s", filename, strerror(errno));
-        return 0;
+        print_error("Failed to open output file: %s", filename);
+        return ZYPHER_FAILURE;
     }
 
-    /* Write PHP file header */
-    fprintf(fp, "<?php\n");
-    fprintf(fp, "/**\n");
-    fprintf(fp, " * Zypher Encoded PHP File\n");
-
-    /* Fix the time formatting issue with proper time_t variable */
-    time_t current_time = time(NULL);
-    fprintf(fp, " * Generated: %s", ctime(&current_time));
-
-    fprintf(fp, " * Copyright (c) %d Zypher Encoder\n", 2025);
-    fprintf(fp, " * \n");
-    fprintf(fp, " * This file is encoded and can only be executed with the Zypher loader extension.\n");
-    fprintf(fp, " * For more information, visit https://www.zypher.com/\n");
-    fprintf(fp, " */\n\n");
-
-    /* License check code */
-    if (options->expire_timestamp > 0 || options->domain_lock)
+    /* Write stub */
+    if (fwrite(stub, 1, strlen(stub), fp) != strlen(stub))
     {
-        fprintf(fp, "// License Information\n");
-        if (options->expire_timestamp > 0)
-        {
-            /* Fix expire timestamp handling */
-            time_t expire_time = (time_t)options->expire_timestamp;
-            fprintf(fp, "// Expires: %s", ctime(&expire_time));
-        }
-        if (options->domain_lock)
-        {
-            fprintf(fp, "// Domain: %s\n", options->domain_lock);
-        }
-        fprintf(fp, "\n");
+        print_error("Failed to write PHP stub to file");
+        fclose(fp);
+        return ZYPHER_FAILURE;
     }
 
-    /* Write the extension check exactly as specified */
-    fprintf(fp, "if(!extension_loaded('zypher')){die('The file '.__FILE__");
-    fprintf(fp, ".\" is corrupted.\\n\\nScript error: the \".((php_sapi_name()=='cli') ?'Zypher':'<a href=\\\"https://www.zypher.com\\\">Zypher</a>')");
-    fprintf(fp, ".\" Loader for PHP needs to be installed.\\n\\nThe Zypher Loader is the industry standard PHP extension for running protected PHP code,\\n");
-    fprintf(fp, "and can usually be added easily to a PHP installation.\\n\\nFor Loaders please visit\".((php_sapi_name()=='cli')?\":\\n\\nhttps://get-loader.zypher.com\\n\\nFor\":");
-    fprintf(fp, "\" <a href=\\\"https://get-loader.zypher.com\\\">get-loader.zypher.com</a> and for\").\" an instructional video please see\".((php_sapi_name()=='cli')?\":\\n\\nhttp://zypher.be/LV\\n\\n\":");
-    fprintf(fp, "\" <a href=\\\"http://zypher.be/LV\\\">http://zypher.be/LV</a> \").\"\");}exit(0);\n");
-    fprintf(fp, "?>\n");
+    /* Write padded signature */
+    if (fwrite(padded_signature, 1, strlen(padded_signature), fp) != strlen(padded_signature))
+    {
+        print_error("Failed to write signature to file");
+        fclose(fp);
+        return ZYPHER_FAILURE;
+    }
 
-    /* Write the encoded content with signature exactly as defined in the zypher_common.h */
-    fprintf(fp, "%s%s", ZYPHER_SIGNATURE, encoded_content);
+    /* Add a newline after the padded signature */
+    if (fwrite("\n", 1, 1, fp) != 1)
+    {
+        print_error("Failed to write newline after signature");
+        fclose(fp);
+        return ZYPHER_FAILURE;
+    }
 
+    /* Write encoded content */
+    if (fwrite(encoded_content, 1, content_len, fp) != content_len)
+    {
+        print_error("Failed to write encoded content to file");
+        fclose(fp);
+        return ZYPHER_FAILURE;
+    }
+
+    /* Close the file */
     fclose(fp);
-    return 1;
+
+    print_debug("Encoded file created successfully: %s", filename);
+    return ZYPHER_SUCCESS;
+}
+
+/* Get formatted timestamp string */
+char *get_timestamp_string(uint32_t timestamp)
+{
+    static char buffer[64];
+    struct tm *timeinfo;
+    time_t time_value = timestamp;
+
+    timeinfo = localtime(&time_value);
+    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
+
+    return buffer;
 }

@@ -204,15 +204,24 @@ int main(int argc, char *argv[])
     char default_output[4096] = {0};
     if (!output_file)
     {
-        char *input_basename = basename(strdup(input_file));
-        char *dot = strrchr(input_basename, '.');
-        if (dot)
+        char *input_copy = strdup(input_file); // Create a copy that we own
+        if (input_copy)
         {
-            *dot = '\0';
+            char *input_basename = basename(input_copy);
+            char *dot = strrchr(input_basename, '.');
+            if (dot)
+            {
+                *dot = '\0';
+            }
+            snprintf(default_output, sizeof(default_output), "%s.encoded.php", input_basename);
+            output_file = default_output;
+            free(input_copy); // Free our copy, not the result of basename
         }
-        snprintf(default_output, sizeof(default_output), "%s.encoded.php", input_basename);
-        output_file = default_output;
-        free(input_basename);
+        else
+        {
+            print_error("Memory allocation failed");
+            return EXIT_FAILURE;
+        }
     }
 
     /* Set options */
@@ -220,7 +229,7 @@ int main(int argc, char *argv[])
     options.output_file = output_file;
 
     /* Initialize encoder */
-    if (!zypher_encoder_init())
+    if (zypher_encoder_init() != ZYPHER_SUCCESS)
     {
         print_error("Failed to initialize encoder");
         return EXIT_FAILURE;
@@ -241,7 +250,7 @@ int main(int argc, char *argv[])
     }
 
     /* Do the encoding */
-    if (encode_php_file(&options))
+    if (encode_php_file(&options) == ZYPHER_SUCCESS)
     {
         printf("Encoding successful. Output written to %s\n", output_file);
         result = EXIT_SUCCESS;

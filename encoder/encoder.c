@@ -1,17 +1,36 @@
-/**
- * Zypher PHP Encoder - Core encoding functionality
- * Main coordinator for the encoding process
- */
+/*
+  +----------------------------------------------------------------------+
+  | Zypher PHP Encoder                                                    |
+  +----------------------------------------------------------------------+
+  | Copyright (c) 2023-2025 Zypher Team                                  |
+  +----------------------------------------------------------------------+
+  | This source file is subject to version 3.01 of the PHP license,      |
+  | that is bundled with this package in the file LICENSE, and is        |
+  | available through the world-wide-web at the following url:           |
+  | http://www.php.net/license/3_01.txt                                  |
+  | If you did not receive a copy of the PHP license and are unable to   |
+  | obtain it through the world-wide-web, please send a note to          |
+  | license@php.net so we can mail you a copy immediately.               |
+  +----------------------------------------------------------------------+
+  | Author: Zypher Team <info@zypher.com>                                |
+  +----------------------------------------------------------------------+
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <errno.h>
+#include <stdarg.h>
+#include <fcntl.h>
+#include <libgen.h>
 
 /* OpenSSL includes */
+#include <openssl/evp.h>
+#include <openssl/aes.h>
+#include <openssl/err.h>
 #include <openssl/rand.h>
 
 /* Common headers */
@@ -19,293 +38,358 @@
 #include "../include/zypher_common.h"
 #include "../build/zypher_master_key.h"
 
-/* External debug function */
+/* Forward declarations */
 extern void print_debug(const char *format, ...);
 extern void print_error(const char *format, ...);
-
-/* Function prototypes from other modules */
-extern char *read_file_contents(const char *filename, size_t *size);
-extern char *run_command(const char *command, size_t *output_size);
-extern char *base64_encode(const unsigned char *input, size_t length);
-extern int create_stub_file(const char *filename, const char *encoded_content, size_t content_len,
-                            const zypher_encoder_options *options);
 extern int compile_php_to_opcodes(const char *source_code, const char *filename, char **output, size_t *output_len);
-extern void calculate_content_checksum(const char *content, size_t length, char *output);
-extern char *encrypt_content(const char *content, size_t content_len, const char *key,
-                             unsigned char *iv, size_t *out_len);
+extern char *clean_php_source(const char *source_code);
+extern char *php_serialize_data(const char *contents, const char *filename);
 extern char *derive_encryption_key(const char *master_key, const char *filename, int iterations);
+extern char *encrypt_content(const char *content, size_t content_len, const char *key, unsigned char *iv, size_t *out_len);
+extern char *read_file_contents(const char *filename, size_t *size);
+extern void byte_rotate(unsigned char *data, size_t len, int offset);
+extern char *base64_encode(const unsigned char *input, size_t length);
+extern void calculate_content_checksum(const char *content, size_t length, char *output);
+extern int create_stub_file(const char *filename, const char *encoded_content, size_t content_len, const zypher_encoder_options *options);
 
-/* Global encoder context */
-typedef struct _zypher_encoder_ctx
-{
-    char master_key[65]; /* Hex string of the master key */
-    int initialized;
-} zypher_encoder_ctx;
-
-/* Encoder context */
-static zypher_encoder_ctx g_ctx;
-
-/* Initialize the encoder */
-int zypher_encoder_init()
-{
-    /* Convert master key to hex string */
-    memset(&g_ctx, 0, sizeof(g_ctx));
-
-    /* Check if master key is available */
-#ifndef ZYPHER_MASTER_KEY
-    print_error("Master key not defined. Please run make first to generate it.");
-    return 0;
+/* PHP embedding variables */
+#ifdef HAVE_EMBED
+#include <sapi/embed/php_embed.h>
 #endif
 
-    /* Copy hex string master key */
-    strncpy(g_ctx.master_key, ZYPHER_MASTER_KEY, sizeof(g_ctx.master_key) - 1);
-    g_ctx.initialized = 1;
+/* Initialize encoder and required libraries */
+int zypher_encoder_init()
+{
+    print_debug("Initializing encoder");
 
-    /* Check if PHP is available */
-    char *php_version = run_command("php -v | head -n1", NULL);
-    if (!php_version)
+    /* Initialize OpenSSL */
+    OpenSSL_add_all_algorithms();
+    ERR_load_crypto_strings();
+
+    /* Seed the random number generator */
+    if (!RAND_poll())
     {
-        print_error("PHP not found or not executable");
-        return 0;
+        print_error("Failed to seed OpenSSL PRNG");
+        return ZYPHER_FAILURE;
     }
 
-    print_debug("Using %s", php_version);
-    free(php_version);
+#ifdef HAVE_EMBED
+    /* Initialize PHP embedding if available */
+    php_embed_init(0, NULL);
+    print_debug("PHP embedding initialized");
+#endif
 
-    return 1;
+    print_debug("Encoder initialized successfully");
+    return ZYPHER_SUCCESS;
 }
 
-/* Shutdown the encoder */
+/* Shutdown encoder and free resources */
 void zypher_encoder_shutdown()
 {
-    /* Nothing special to clean up at this point */
+    print_debug("Shutting down encoder");
+
+    /* Clean up OpenSSL */
+    EVP_cleanup();
+    ERR_free_strings();
+
+#ifdef HAVE_EMBED
+    /* Shutdown PHP embedding if available */
+    php_embed_shutdown();
+    print_debug("PHP embedding shutdown");
+#endif
 }
 
 /* Main encoding function */
 int encode_php_file(const zypher_encoder_options *options)
 {
-    int success = 0;
-    char *file_content = NULL;
-    size_t file_size;
-
-    /* Stage 1: Read the PHP file */
-    printf("Reading PHP file: %s\n", options->input_file);
-    file_content = read_file_contents(options->input_file, &file_size);
-    if (!file_content)
-    {
-        return 0;
-    }
-
-    /* Stage 2: Compile the PHP code to opcodes using PHP CLI */
-    printf("Compiling PHP code to opcodes...\n");
-    size_t serialized_len;
+    char *source_code = NULL;
+    char *cleaned_source = NULL;
+    char *opcodes = NULL;
     char *serialized = NULL;
-    if (compile_php_to_opcodes(file_content, options->input_file, &serialized, &serialized_len) != ZYPHER_SUCCESS)
+    char *encryption_key = NULL;
+    char *encrypted = NULL;
+    char *encoded_content = NULL;
+    unsigned char iv[IV_LENGTH] = {0};
+    size_t source_len = 0;
+    size_t opcodes_len = 0;
+    size_t encrypted_len = 0;
+    int result = ZYPHER_FAILURE;
+    char checksum[33] = {0}; /* MD5 hex digest (32 chars + null) */
+    char *input_copy = NULL;
+    char *filename_only = NULL;
+    char debug_filename[4096] = {0};
+
+    /* Base path for debug files */
+    char debug_base[4096] = {0};
+
+    if (!options || !options->input_file || !options->output_file)
     {
-        print_error("Failed to compile PHP code");
-        free(file_content);
-        return 0;
+        print_error("Invalid options passed to encoder");
+        return ZYPHER_FAILURE;
     }
-    free(file_content); /* No longer needed */
 
-    /* First 32 bytes should be the MD5 checksum, rest is serialized opcodes */
-    char checksum[33];
-    memcpy(checksum, serialized, 32);
-    checksum[32] = '\0';
-
+    /* Generate base filename for debug outputs */
     if (options->debug)
     {
-        print_debug("Checksum: %s", checksum);
+        strncpy(debug_base, options->input_file, sizeof(debug_base) - 1);
+        debug_base[sizeof(debug_base) - 1] = '\0'; /* Ensure null-termination */
+    }
 
-        /* Save opcodes to a .opcode file for debugging and analysis - only in debug mode */
-        char opcode_file[4096];
-        snprintf(opcode_file, sizeof(opcode_file), "%s.opcode", options->input_file);
-        FILE *opcode_fp = fopen(opcode_file, "wb");
-        if (opcode_fp)
+    /* Extract just the filename portion for key derivation */
+    input_copy = strdup(options->input_file);
+    if (!input_copy)
+    {
+        print_error("Failed to allocate memory for filename");
+        return ZYPHER_FAILURE;
+    }
+    filename_only = basename(input_copy);
+    print_debug("Using base filename '%s' for key derivation", filename_only);
+
+    /* Read source code from file */
+    source_code = read_file_contents(options->input_file, &source_len);
+    if (!source_code)
+    {
+        print_error("Failed to read source code from %s", options->input_file);
+        free(input_copy); /* Free the copy, not the basename result */
+        return ZYPHER_FAILURE;
+    }
+
+    print_debug("Read %zu bytes from %s", source_len, options->input_file);
+
+    /* Clean source code (remove comments and whitespace) */
+    cleaned_source = clean_php_source(source_code);
+    if (!cleaned_source)
+    {
+        print_error("Failed to clean source code");
+        free(source_code);
+        free(input_copy);
+        return ZYPHER_FAILURE;
+    }
+
+    print_debug("Source code cleaned");
+
+    /* Save cleaned source in debug mode */
+    if (options->debug)
+    {
+        snprintf(debug_filename, sizeof(debug_filename), "%s.cleaned", debug_base);
+        FILE *debug_file = fopen(debug_filename, "wb");
+        if (debug_file)
         {
-            printf("Saving compiled opcodes to %s\n", opcode_file);
-
-            /* Write a simple header */
-            fprintf(opcode_fp, "# Zypher Compiled Opcodes for %s\n", options->input_file);
-            fprintf(opcode_fp, "# Generated: %s", ctime(&(time_t){time(NULL)}));
-            fprintf(opcode_fp, "# Size: %zu bytes\n\n", serialized_len);
-            fprintf(opcode_fp, "# Checksum: %s\n\n", checksum);
-
-            /* Write the serialized opcode data */
-            fwrite(serialized, 1, serialized_len, opcode_fp);
-            fclose(opcode_fp);
-        }
-        else
-        {
-            print_error("Warning: Failed to write opcodes to %s: %s", opcode_file, strerror(errno));
+            if (fwrite(cleaned_source, 1, strlen(cleaned_source), debug_file) == strlen(cleaned_source))
+            {
+                print_debug("Cleaned source saved to %s", debug_filename);
+            }
+            fclose(debug_file);
         }
     }
 
-    /* Stage 4: Derive encryption key for this file */
-    printf("Generating file-specific encryption key...\n");
-    char *encryption_key = derive_encryption_key(g_ctx.master_key, options->input_file,
-                                                 options->iteration_count);
+    /* Step 1: Compile PHP into opcodes */
+    if (compile_php_to_opcodes(cleaned_source, options->input_file, &opcodes, &opcodes_len) != ZYPHER_SUCCESS)
+    {
+        print_error("Failed to compile PHP to opcodes");
+        free(source_code);
+        free(cleaned_source);
+        free(input_copy);
+        return ZYPHER_FAILURE;
+    }
+
+    print_debug("Source code compiled to opcodes");
+
+    /* Save raw opcodes in debug mode */
+    if (options->debug)
+    {
+        snprintf(debug_filename, sizeof(debug_filename), "%s.opcodes", debug_base);
+        FILE *debug_file = fopen(debug_filename, "wb");
+        if (debug_file)
+        {
+            if (fwrite(opcodes, 1, opcodes_len, debug_file) == opcodes_len)
+            {
+                print_debug("Raw opcodes saved to %s (%zu bytes)", debug_filename, opcodes_len);
+            }
+            fclose(debug_file);
+        }
+    }
+
+    /* Step 2: Serialize PHP opcodes with metadata */
+    serialized = php_serialize_data(opcodes, options->input_file);
+    if (!serialized)
+    {
+        print_error("Failed to serialize opcodes");
+        free(source_code);
+        free(cleaned_source);
+        free(opcodes);
+        free(input_copy);
+        return ZYPHER_FAILURE;
+    }
+
+    print_debug("Opcodes serialized successfully");
+
+    /* Save serialized opcodes in debug mode */
+    if (options->debug)
+    {
+        snprintf(debug_filename, sizeof(debug_filename), "%s.serialized", debug_base);
+        FILE *debug_file = fopen(debug_filename, "wb");
+        if (debug_file)
+        {
+            if (fwrite(serialized, 1, strlen(serialized), debug_file) == strlen(serialized))
+            {
+                print_debug("Serialized opcodes saved to %s (%zu bytes)", debug_filename, strlen(serialized));
+            }
+            fclose(debug_file);
+        }
+    }
+
+    /* Step 3: Calculate MD5 checksum of the serialized data */
+    calculate_content_checksum(serialized, strlen(serialized), checksum);
+    print_debug("Content checksum: %s", checksum);
+
+    /* Step 4: Generate IV for encryption */
+    if (RAND_bytes(iv, IV_LENGTH) != 1)
+    {
+        print_error("Failed to generate random IV");
+        free(source_code);
+        free(cleaned_source);
+        free(opcodes);
+        free(serialized);
+        free(input_copy);
+        return ZYPHER_FAILURE;
+    }
+
+    /* Step 5: Derive encryption key from master key and filename */
+    encryption_key = derive_encryption_key(ZYPHER_MASTER_KEY, filename_only, options->iteration_count);
     if (!encryption_key)
     {
         print_error("Failed to derive encryption key");
+        free(source_code);
+        free(cleaned_source);
+        free(opcodes);
         free(serialized);
-        return 0;
+        free(input_copy);
+        return ZYPHER_FAILURE;
     }
 
-    /* Generate random IV */
-    unsigned char content_iv[16];
-    unsigned char key_iv[16];
-    if (!RAND_bytes(content_iv, sizeof(content_iv)) || !RAND_bytes(key_iv, sizeof(key_iv)))
+    print_debug("Encryption key derived successfully");
+
+    /* Log encryption info in debug mode instead of saving to file */
+    if (options->debug)
     {
-        print_error("Failed to generate random IV");
-        free(encryption_key);
-        free(serialized);
-        return 0;
-    }
+        char iv_hex[IV_LENGTH * 2 + 1] = {0};
+        char key_preview[17] = {0}; /* 8 bytes = 16 hex chars + null */
 
-    /* Encrypt the serialized opcodes */
-    printf("Encrypting opcodes with AES-256-CBC...\n");
-    size_t encrypted_len = 0;
-    char *encrypted_data = encrypt_content(serialized, serialized_len,
-                                           encryption_key, content_iv, &encrypted_len);
-    if (!encrypted_data)
-    {
-        print_error("Failed to encrypt opcodes");
-        free(encryption_key);
-        free(serialized);
-        return 0;
-    }
-
-    /* We no longer need the serialized data */
-    free(serialized);
-
-    /* Build metadata packet:
-     * - Format version (1 byte)
-     * - Format type (1 byte) - opcode format
-     * - Timestamp (4 bytes)
-     * - Content IV (16 bytes)
-     * - Key IV (16 bytes)
-     * - File key (encrypted) - length + data
-     * - Original filename - length + data
-     */
-    unsigned char *metadata = malloc(1024); /* Start with a reasonable buffer */
-    size_t metadata_len = 0;
-
-    /* Add format version and type */
-    metadata[metadata_len++] = ZYPHER_FORMAT_VERSION;
-    metadata[metadata_len++] = ZYPHER_FORMAT_OPCODE;
-
-    /* Add timestamp (big endian) */
-    uint32_t timestamp = time(NULL);
-    metadata[metadata_len++] = (timestamp >> 24) & 0xFF;
-    metadata[metadata_len++] = (timestamp >> 16) & 0xFF;
-    metadata[metadata_len++] = (timestamp >> 8) & 0xFF;
-    metadata[metadata_len++] = timestamp & 0xFF;
-
-    /* Add content IV */
-    memcpy(metadata + metadata_len, content_iv, 16);
-    metadata_len += 16;
-
-    /* Add key IV */
-    memcpy(metadata + metadata_len, key_iv, 16);
-    metadata_len += 16;
-
-    /* Encrypt the file key with the master key */
-    unsigned char *encrypted_key = malloc(100); /* More than enough for the key */
-    size_t encrypted_key_len = 0;
-    char *encrypted_file_key = encrypt_content(encryption_key, strlen(encryption_key),
-                                               g_ctx.master_key, key_iv, &encrypted_key_len);
-    if (!encrypted_file_key)
-    {
-        print_error("Failed to encrypt file key");
-        free(encrypted_key);
-        free(metadata);
-        free(encryption_key);
-        free(encrypted_data);
-        return 0;
-    }
-
-    /* Add encrypted key length and data */
-    metadata[metadata_len++] = (encrypted_key_len >> 24) & 0xFF;
-    metadata[metadata_len++] = (encrypted_key_len >> 16) & 0xFF;
-    metadata[metadata_len++] = (encrypted_key_len >> 8) & 0xFF;
-    metadata[metadata_len++] = encrypted_key_len & 0xFF;
-    memcpy(metadata + metadata_len, encrypted_file_key, encrypted_key_len);
-    metadata_len += encrypted_key_len;
-
-    /* Add original filename length and data */
-    const char *filename = options->input_file;
-    size_t filename_len = strlen(filename);
-    if (filename_len > 255)
-    {
-        filename_len = 255; /* Truncate if too long */
-    }
-    metadata[metadata_len++] = filename_len;
-    memcpy(metadata + metadata_len, filename, filename_len);
-    metadata_len += filename_len;
-
-    /* Add license information if provided */
-    if (options->domain_lock)
-    {
-        size_t domain_len = strlen(options->domain_lock);
-        if (domain_len > 255)
+        /* Format IV as hex string */
+        for (int i = 0; i < IV_LENGTH; i++)
         {
-            domain_len = 255;
+            sprintf(&iv_hex[i * 2], "%02x", iv[i]);
         }
-        metadata[metadata_len++] = domain_len;
-        memcpy(metadata + metadata_len, options->domain_lock, domain_len);
-        metadata_len += domain_len;
+
+        /* Format first 8 bytes of the key as hex string */
+        for (int i = 0; i < 8 && i < KEY_LENGTH; i++)
+        {
+            sprintf(&key_preview[i * 2], "%02x", (unsigned char)encryption_key[i]);
+        }
+
+        print_debug("Encryption Info:");
+        print_debug("  IV: %s", iv_hex);
+        print_debug("  Key-Derivation: PBKDF2-HMAC-SHA256");
+        print_debug("  Iterations: %d", options->iteration_count);
+        print_debug("  Salt: %s", filename_only);
+        print_debug("  Derived Key (first 8 bytes): %s... (remaining bytes omitted for security)", key_preview);
     }
-    else
+
+    /* Step 6: Encrypt the serialized data */
+    encrypted = encrypt_content(serialized, strlen(serialized), encryption_key, iv, &encrypted_len);
+    if (!encrypted)
     {
-        metadata[metadata_len++] = 0; /* No domain */
+        print_error("Failed to encrypt content");
+        free(source_code);
+        free(cleaned_source);
+        free(opcodes);
+        free(serialized);
+        free(encryption_key);
+        free(input_copy);
+        return ZYPHER_FAILURE;
     }
 
-    /* Add expiry timestamp if provided */
-    metadata[metadata_len++] = (options->expire_timestamp >> 24) & 0xFF;
-    metadata[metadata_len++] = (options->expire_timestamp >> 16) & 0xFF;
-    metadata[metadata_len++] = (options->expire_timestamp >> 8) & 0xFF;
-    metadata[metadata_len++] = options->expire_timestamp & 0xFF;
+    print_debug("Content encrypted successfully (%zu bytes)", encrypted_len);
 
-    /* Now combine metadata and encrypted data */
-    size_t total_size = metadata_len + encrypted_len;
-    unsigned char *combined = malloc(total_size);
-    memcpy(combined, metadata, metadata_len);
-    memcpy(combined + metadata_len, encrypted_data, encrypted_len);
-    free(encrypted_data);
-    free(metadata);
-
-    /* Apply byte rotation obfuscation if enabled */
+    /* Step 7: If obfuscation is enabled, rotate bytes */
     if (options->obfuscate)
     {
-        printf("Applying byte rotation obfuscation...\n");
-        for (size_t i = 0; i < total_size; i++)
+        print_debug("Applying byte rotation obfuscation");
+        byte_rotate((unsigned char *)encrypted, encrypted_len, BYTE_ROTATION_OFFSET);
+
+        /* Save obfuscated data in debug mode */
+        if (options->debug)
         {
-            combined[i] = (combined[i] + BYTE_ROTATION_OFFSET) & 0xFF;
+            snprintf(debug_filename, sizeof(debug_filename), "%s.obfuscated", debug_base);
+            FILE *debug_file = fopen(debug_filename, "wb");
+            if (debug_file)
+            {
+                if (fwrite(encrypted, 1, encrypted_len, debug_file) == encrypted_len)
+                {
+                    print_debug("Obfuscated data saved to %s", debug_filename);
+                }
+                fclose(debug_file);
+            }
         }
     }
 
-    /* Base64 encode the final result */
-    printf("Base64 encoding final output...\n");
-    char *b64_result = base64_encode(combined, total_size);
-    if (!b64_result)
+    /* Step 8: Base64 encode the encrypted content */
+    encoded_content = base64_encode((unsigned char *)encrypted, encrypted_len);
+    if (!encoded_content)
     {
-        print_error("Failed to base64 encode output");
-        free(combined);
-        free(encrypted_file_key);
+        print_error("Failed to base64 encode encrypted content");
+        free(source_code);
+        free(cleaned_source);
+        free(opcodes);
+        free(serialized);
         free(encryption_key);
-        return 0;
+        free(encrypted);
+        free(input_copy);
+        return ZYPHER_FAILURE;
     }
 
-    /* Create the stub PHP file with the encoded data */
-    printf("Creating encoded PHP file: %s\n", options->output_file);
-    success = create_stub_file(options->output_file, b64_result, strlen(b64_result), options);
+    print_debug("Content encoded with base64");
 
-    /* Cleanup */
-    free(b64_result);
-    free(combined);
-    free(encrypted_file_key);
+    /* Save base64 encoded data in debug mode */
+    if (options->debug)
+    {
+        snprintf(debug_filename, sizeof(debug_filename), "%s.base64", debug_base);
+        FILE *debug_file = fopen(debug_filename, "wb");
+        if (debug_file)
+        {
+            if (fwrite(encoded_content, 1, strlen(encoded_content), debug_file) == strlen(encoded_content))
+            {
+                print_debug("Base64 encoded data saved to %s", debug_filename);
+            }
+            fclose(debug_file);
+        }
+    }
+
+    /* Step 9: Create output file with proper stub */
+    result = create_stub_file(options->output_file, encoded_content, strlen(encoded_content), options);
+
+    /* Log final structure information in debug mode instead of saving to file */
+    if (options->debug && result == ZYPHER_SUCCESS)
+    {
+        print_debug("Final structure breakdown:");
+        print_debug("  1. PHP Stub + ?> closing tag");
+        print_debug("  2. Signature: %s", ZYPHER_SIGNATURE);
+        print_debug("  3. Encoded payload: [BASE64 DATA LENGTH: %zu bytes]", strlen(encoded_content));
+        print_debug("");
+        print_debug("Total file size: ~%zu bytes",
+                    strlen("<?php ... ?>\n") + SIGNATURE_LENGTH + strlen(encoded_content));
+    }
+
+    /* Clean up */
+    free(source_code);
+    free(cleaned_source);
+    free(opcodes);
+    free(serialized);
     free(encryption_key);
+    free(encrypted);
+    free(encoded_content);
+    free(input_copy); /* Free the copy, not the basename result */
 
-    return success;
+    return result;
 }
