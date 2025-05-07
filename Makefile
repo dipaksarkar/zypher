@@ -21,10 +21,23 @@ PHPIZE := phpize
 PHP_VERSION := $(shell $(PHP_CONFIG) --version | cut -d. -f1,2)
 PHP_BINARY := $(shell which $(PHP))
 PHP_EXTENSION_DIR := $(shell $(PHP_CONFIG) --extension-dir)
+PHP_INCLUDE := $(shell $(PHP_CONFIG) --includes)
+PHP_LDFLAGS := $(shell $(PHP_CONFIG) --ldflags)
+PHP_LIBS := $(shell $(PHP_CONFIG) --libs)
 
-# Compiler flags
-CFLAGS := -Wall -O2 -fPIC -I$(INCLUDE_DIR)
-LDFLAGS := -lssl -lcrypto
+# Check if PHP embed SAPI is available
+PHP_EMBED_LDFLAGS := $(shell $(PHP_CONFIG) --ldflags 2>/dev/null | grep -o -- '-L[^ ]*embed[^ ]*' 2>/dev/null || echo "")
+PHP_EMBED_LIBS := $(shell $(PHP_CONFIG) --libs 2>/dev/null | grep -o -- '-lphp[^ ]*' 2>/dev/null || echo "")
+PHP_EMBED_INCLUDE := $(shell $(PHP) -r 'echo file_exists(PHP_CONFIG_FILE_PATH."/embed") ? "yes" : "no";')
+
+# Required PHP embedding for direct Zend API access
+ifeq ($(strip $(PHP_EMBED_LIBS)),)
+  $(error PHP embedding is required but not available. Please install PHP with --enable-embed SAPI support)
+endif
+
+# Set up compiler flags with PHP embedding
+CFLAGS := -Wall -O2 -fPIC -I$(INCLUDE_DIR) $(PHP_INCLUDE) -DHAVE_EMBED=1
+LDFLAGS := -lssl -lcrypto $(PHP_LDFLAGS) $(PHP_LIBS) $(PHP_EMBED_LDFLAGS) $(PHP_EMBED_LIBS)
 
 # Master key file
 MASTER_KEY_FILE := $(BUILD_DIR)/zypher_master_key.h
@@ -83,13 +96,27 @@ prepare_loader: $(MASTER_KEY_FILE)
 	@chmod 644 $(INCLUDE_DIR)/$(notdir $(MASTER_KEY_FILE))
 
 # Build the Encoder
-encoder: $(ENCODER_BIN)
+encoder: check_php_embed $(ENCODER_BIN)
 
 $(ENCODER_BIN): $(ENCODER_SOURCES) $(INCLUDE_DIR)/zypher_common.h $(INCLUDE_DIR)/zypher_encoder.h $(MASTER_KEY_FILE)
-	@echo "Building Zypher Encoder..."
+	@echo "Building Zypher Encoder with Zend Engine API..."
 	$(CC) $(CFLAGS) $(ENCODER_SOURCES) -o $@ $(LDFLAGS)
 	@echo "Encoder built successfully: $(ENCODER_BIN)"
 	@chmod +x $(ENCODER_BIN)
+
+# Check if PHP embed SAPI is available
+check_php_embed:
+	@echo "Checking for PHP embedding support..."
+	@if [ -z "$(PHP_EMBED_LIBS)" ]; then \
+		echo "ERROR: PHP embedding SAPI is required but not available"; \
+		echo "Please install PHP with --enable-embed SAPI support"; \
+		echo "For example:"; \
+		echo "  ./configure --enable-embed [other options]"; \
+		echo "  make && make install"; \
+		exit 1; \
+	else \
+		echo "PHP embedding support detected ($(PHP_EMBED_LIBS))"; \
+	fi
 
 # Clean and reset the loader build environment before building
 reset_loader:

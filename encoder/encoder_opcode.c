@@ -85,7 +85,7 @@ char *clean_php_source(const char *source_code)
     return strdup(source_code);
 }
 
-/* Compile PHP to opcodes */
+/* Compile PHP to opcodes using Zend API */
 int compile_php_to_opcodes(const char *source_code, const char *filename, char **output, size_t *output_len)
 {
     if (!source_code || !filename || !output || !output_len)
@@ -97,164 +97,115 @@ int compile_php_to_opcodes(const char *source_code, const char *filename, char *
     *output = NULL;
     *output_len = 0;
 
-    /* Create improved PHP opcode extraction */
-    char *temp_file = "/tmp/zypher_temp_source.php";
-    char *opcode_extractor = "/tmp/zypher_extract_opcodes.php";
-    char *opcode_output = NULL;
-    size_t cmd_output_size = 0;
-    FILE *fp = NULL;
+#ifdef HAVE_EMBED
+    /* Using PHP embedding if available */
+    zend_file_handle file_handle;
+    zend_op_array *op_array;
+    char *serialized_opcodes = NULL;
+    size_t serialized_len = 0;
 
-    /* Write source to temporary file */
-    fp = fopen(temp_file, "w");
-    if (!fp)
+    /* Initialize PHP runtime for this request */
+    if (php_request_startup() != SUCCESS)
     {
-        print_error("Failed to create temporary file for opcode generation");
+        print_error("Failed to initialize PHP runtime");
         return ZYPHER_FAILURE;
     }
 
-    fwrite(source_code, 1, strlen(source_code), fp);
-    fclose(fp);
+    /* Set up file handle for our source code */
+    memset(&file_handle, 0, sizeof(file_handle));
+    file_handle.type = ZEND_HANDLE_STRING;
+    file_handle.filename = filename;
+    file_handle.opened_path = NULL;
+    file_handle.free_filename = 0;
+    file_handle.handle.stream.handle = NULL;
+    file_handle.handle.string.val = (char *)source_code;
+    file_handle.handle.string.len = strlen(source_code);
 
-    /* Create a better PHP script to extract opcodes with PHP internals */
-    fp = fopen(opcode_extractor, "w");
-    if (!fp)
+    /* Compile the source code into opcodes */
+    op_array = zend_compile_file(&file_handle, ZEND_INCLUDE);
+
+    if (op_array != NULL)
     {
-        print_error("Failed to create opcode extractor script");
-        unlink(temp_file);
-        return ZYPHER_FAILURE;
+        /* Successfully compiled to opcodes */
+        print_debug("Source code successfully compiled to opcodes");
+
+        /* Serialize the op_array for storage - we need to use PHP's serialize function */
+        zval op_array_zval;
+        ZVAL_EMPTY_ARRAY(&op_array_zval);
+
+        /* Build our data structure with op_array and metadata */
+        add_assoc_string(&op_array_zval, "filename", (char *)filename);
+        add_assoc_string(&op_array_zval, "source", (char *)source_code);
+        add_assoc_long(&op_array_zval, "timestamp", time(NULL));
+        add_assoc_string(&op_array_zval, "php_version", PHP_VERSION);
+
+        /* Extract namespace and class information */
+        if (op_array->scope)
+        {
+            add_assoc_string(&op_array_zval, "class", (char *)ZSTR_VAL(op_array->scope->name));
+            if (op_array->scope->parent)
+            {
+                add_assoc_string(&op_array_zval, "parent", (char *)ZSTR_VAL(op_array->scope->parent->name));
+            }
+        }
+
+        /* Add compilation flags */
+        zval flags_zval;
+        array_init(&flags_zval);
+        add_assoc_long(&flags_zval, "opcache_enabled", (long)opcache_get_status() != NULL);
+        add_assoc_zval(&op_array_zval, "flags", &flags_zval);
+
+        /* Serialize to string */
+        php_serialize_data_t var_hash;
+        smart_str buf = {0};
+
+        PHP_VAR_SERIALIZE_INIT(var_hash);
+        php_var_serialize(&buf, &op_array_zval, &var_hash);
+        PHP_VAR_SERIALIZE_DESTROY(var_hash);
+
+        if (buf.s)
+        {
+            serialized_opcodes = estrndup(ZSTR_VAL(buf.s), ZSTR_LEN(buf.s));
+            serialized_len = ZSTR_LEN(buf.s);
+            smart_str_free(&buf);
+
+            /* Set output parameters */
+            *output = serialized_opcodes;
+            *output_len = serialized_len;
+
+            print_debug("Successfully serialized opcodes (%zu bytes)", serialized_len);
+
+            /* Clean up */
+            destroy_op_array(op_array);
+            efree(op_array);
+            php_request_shutdown(NULL);
+
+            return ZYPHER_SUCCESS;
+        }
+        else
+        {
+            print_error("Failed to serialize opcodes");
+        }
+
+        /* Clean up op array if serialization failed */
+        destroy_op_array(op_array);
+        efree(op_array);
+    }
+    else
+    {
+        print_error("Failed to compile source code");
     }
 
-    /* Write the improved PHP code to extract opcodes */
-    fprintf(fp, "<?php\n");
-    fprintf(fp, "// Zypher Opcode Extractor\n");
-    fprintf(fp, "error_reporting(E_ALL);\n\n");
-    fprintf(fp, "// Configuration\n");
-    fprintf(fp, "$source_file = '%s';\n", temp_file);
-    fprintf(fp, "$original_filename = '%s';\n", filename);
-    fprintf(fp, "$source_code = file_get_contents($source_file);\n\n");
+    /* Shutdown PHP request */
+    php_request_shutdown(NULL);
 
-    /* Parse the file to extract namespace and class information */
-    fprintf(fp, "// Extract namespace and class information\n");
-    fprintf(fp, "$namespace = '';\n");
-    fprintf(fp, "$classname = '';\n");
-    fprintf(fp, "$tokens = token_get_all($source_code);\n");
-    fprintf(fp, "$in_namespace = false;\n");
-    fprintf(fp, "foreach ($tokens as $token) {\n");
-    fprintf(fp, "    if (is_array($token)) {\n");
-    fprintf(fp, "        list($id, $text) = $token;\n");
-    fprintf(fp, "        if ($id === T_NAMESPACE) {\n");
-    fprintf(fp, "            $in_namespace = true;\n");
-    fprintf(fp, "        } elseif ($in_namespace && $id === T_STRING) {\n");
-    fprintf(fp, "            $namespace .= $text;\n");
-    fprintf(fp, "        } elseif ($in_namespace && $id === T_NS_SEPARATOR) {\n");
-    fprintf(fp, "            $namespace .= '\\\\';\n");
-    fprintf(fp, "        } elseif ($in_namespace && $id === T_WHITESPACE) {\n");
-    fprintf(fp, "            // Skip whitespace in namespace\n");
-    fprintf(fp, "        } elseif ($in_namespace && $text === ';') {\n");
-    fprintf(fp, "            $in_namespace = false;\n");
-    fprintf(fp, "        } elseif ($id === T_CLASS) {\n");
-    fprintf(fp, "            // Get next non-whitespace token which should be the class name\n");
-    fprintf(fp, "            $i = array_search($token, $tokens) + 1;\n");
-    fprintf(fp, "            while (isset($tokens[$i]) && is_array($tokens[$i]) && $tokens[$i][0] === T_WHITESPACE) {\n");
-    fprintf(fp, "                $i++;\n");
-    fprintf(fp, "            }\n");
-    fprintf(fp, "            if (isset($tokens[$i]) && is_array($tokens[$i]) && $tokens[$i][0] === T_STRING) {\n");
-    fprintf(fp, "                $classname = $tokens[$i][1];\n");
-    fprintf(fp, "            }\n");
-    fprintf(fp, "        }\n");
-    fprintf(fp, "    }\n");
-    fprintf(fp, "}\n\n");
-
-    /* Create more reliable opcode extraction */
-    fprintf(fp, "// Create data structure to hold source and metadata\n");
-    fprintf(fp, "$result = [\n");
-    fprintf(fp, "    'filename' => $original_filename,\n");
-    fprintf(fp, "    'contents' => $source_code,\n");
-    fprintf(fp, "    'source_hint' => $source_code,\n"); // Store full source
-    fprintf(fp, "    'namespace' => $namespace,\n");
-    fprintf(fp, "    'classname' => $classname,\n");
-    fprintf(fp, "    'timestamp' => time(),\n");
-    fprintf(fp, "    'php_version' => PHP_VERSION,\n");
-    fprintf(fp, "];\n\n");
-
-    /* Try to use OPcache to get file status if available */
-    fprintf(fp, "// Try to use OPcache if available\n");
-    fprintf(fp, "if (function_exists('opcache_compile_file') && function_exists('opcache_get_status')) {\n");
-    fprintf(fp, "    if (opcache_compile_file($source_file)) {\n");
-    fprintf(fp, "        $opcache_status = opcache_get_status(true);\n");
-    fprintf(fp, "        $result['compiled_with'] = 'opcache';\n");
-    fprintf(fp, "        if (isset($opcache_status['scripts'][$source_file])) {\n");
-    fprintf(fp, "            $result['opcache_info'] = $opcache_status['scripts'][$source_file];\n");
-    fprintf(fp, "        }\n");
-    fprintf(fp, "    }\n");
-    fprintf(fp, "}\n\n");
-
-    /* Directly compile the PHP code for better reliability */
-    fprintf(fp, "// Direct compilation\n");
-    fprintf(fp, "try {\n");
-    fprintf(fp, "    $result['compiled_with'] = 'direct';\n");
-    fprintf(fp, "    \n");
-    fprintf(fp, "    // Use a safe approach with temp files to avoid issues\n");
-    fprintf(fp, "    $temp_func_file = '/tmp/zypher_func_' . uniqid() . '.php';\n");
-    fprintf(fp, "    file_put_contents($temp_func_file, '<?php\\n' . $source_code);\n");
-    fprintf(fp, "    include_once($temp_func_file);\n");
-    fprintf(fp, "    unlink($temp_func_file);\n");
-    fprintf(fp, "    $result['compilation_success'] = true;\n");
-    fprintf(fp, "} catch (Error $e) {\n");
-    fprintf(fp, "    $result['compilation_success'] = false;\n");
-    fprintf(fp, "    $result['compilation_error'] = $e->getMessage();\n");
-    fprintf(fp, "}\n\n");
-
-    /* Output the final result as raw serialized data, not base64 encoded */
-    fprintf(fp, "// Output raw serialized result instead of base64\n");
-    fprintf(fp, "$serialized = serialize($result);\n");
-    fprintf(fp, "echo 'ZYPHER_OPCODES:' . $serialized;\n");
-    fprintf(fp, "?>\n");
-    fclose(fp);
-
-    /* Create command to run the extractor script */
-    char *command = (char *)malloc(strlen(opcode_extractor) + 512);
-    if (!command)
-    {
-        print_error("Failed to allocate memory for command");
-        unlink(temp_file);
-        unlink(opcode_extractor);
-        return ZYPHER_FAILURE;
-    }
-
-    /* Run PHP with error reporting enabled to get detailed errors */
-    sprintf(command, "php -d display_errors=1 -d error_reporting=E_ALL %s 2>&1", opcode_extractor);
-    opcode_output = run_command(command, &cmd_output_size);
-    free(command);
-
-    /* Clean up temporary files */
-    unlink(temp_file);
-    unlink(opcode_extractor);
-
-    if (!opcode_output || cmd_output_size == 0)
-    {
-        print_error("Failed to generate opcodes");
-        return ZYPHER_FAILURE;
-    }
-
-    /* Verify the output starts with our marker */
-    char *marker_pos = strstr(opcode_output, "ZYPHER_OPCODES:");
-    if (!marker_pos)
-    {
-        print_error("Invalid opcode output format: %s", opcode_output);
-        free(opcode_output);
-        return ZYPHER_FAILURE;
-    }
-
-    /* Strip everything before the prefix and return just the encoded data */
-    size_t prefix_len = strlen("ZYPHER_OPCODES:");
-    size_t offset = marker_pos - opcode_output + prefix_len;
-    memmove(opcode_output, opcode_output + offset, cmd_output_size - offset + 1);
-    *output = opcode_output;
-    *output_len = cmd_output_size - offset;
-
-    print_debug("Successfully compiled PHP to opcodes (%zu bytes)", *output_len);
-    return ZYPHER_SUCCESS;
+    return ZYPHER_FAILURE;
+#else
+    /* No fallback - require PHP embedding */
+    print_error("Zend API (zend_compile_file) is required but PHP embedding is not available");
+    print_error("Please rebuild with PHP development headers and --enable-embed SAPI");
+    return ZYPHER_FAILURE;
+#endif
 }
 
 /* Serialize PHP data (opcodes, filename, etc.) */

@@ -4,9 +4,13 @@ services:
         build:
             context: .
             dockerfile: Dockerfile
+            args:
+                PHP_VERSION: "8.3"
         volumes:
             - ./:/zypher
         working_dir: /zypher
+        environment:
+            - PHP_VERSION=8.3
         command: [ "tail", "-f", "/dev/null" ]
         tty: true
         stdin_open: true
