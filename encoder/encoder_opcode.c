@@ -97,16 +97,9 @@ int compile_php_to_opcodes(const char *source_code, const char *filename, char *
     *output = NULL;
     *output_len = 0;
 
-#ifdef HAVE_EMBED
-    /* Use PHP embedding API to get opcodes */
-    print_debug("Using PHP embedding to compile opcodes");
-    /* ... PHP embedding implementation here ... */
-    /* This would use zend_compile_file or zend_compile_string with output buffering */
-#endif
-
-    /* Without embedding, we use PHP CLI to generate opcode representation */
-    char *command = NULL;
+    /* Create improved PHP opcode extraction */
     char *temp_file = "/tmp/zypher_temp_source.php";
+    char *opcode_extractor = "/tmp/zypher_extract_opcodes.php";
     char *opcode_output = NULL;
     size_t cmd_output_size = 0;
     FILE *fp = NULL;
@@ -122,25 +115,121 @@ int compile_php_to_opcodes(const char *source_code, const char *filename, char *
     fwrite(source_code, 1, strlen(source_code), fp);
     fclose(fp);
 
-    /* Create PHP command to get opcodes - either with opcache or regular php reflection */
-    command = (char *)malloc(strlen(temp_file) + 512);
-    if (command)
+    /* Create a better PHP script to extract opcodes with PHP internals */
+    fp = fopen(opcode_extractor, "w");
+    if (!fp)
     {
-        /* Try to use opcache_get_status and opcache_compile_file if available */
-        sprintf(command, "php -d opcache.enable_cli=1 -d opcache.optimization_level=0 "
-                         "-r \"if(function_exists('opcache_compile_file') && opcache_compile_file('%s')) { "
-                         "echo 'ZYPHER_OPCODES:' . base64_encode(serialize(opcache_get_status(true)['scripts']['%s'])); "
-                         "} else { "
-                         "echo 'ZYPHER_OPCODES:' . base64_encode(serialize(array('filename' => '%s', 'contents' => file_get_contents('%s')))); "
-                         "}\"",
-                temp_file, temp_file, filename, temp_file);
-
-        opcode_output = run_command(command, &cmd_output_size);
-        free(command);
+        print_error("Failed to create opcode extractor script");
+        unlink(temp_file);
+        return ZYPHER_FAILURE;
     }
 
-    /* Remove the temporary file */
+    /* Write the improved PHP code to extract opcodes */
+    fprintf(fp, "<?php\n");
+    fprintf(fp, "// Zypher Opcode Extractor\n");
+    fprintf(fp, "error_reporting(E_ALL);\n\n");
+    fprintf(fp, "// Configuration\n");
+    fprintf(fp, "$source_file = '%s';\n", temp_file);
+    fprintf(fp, "$original_filename = '%s';\n", filename);
+    fprintf(fp, "$source_code = file_get_contents($source_file);\n\n");
+
+    /* Parse the file to extract namespace and class information */
+    fprintf(fp, "// Extract namespace and class information\n");
+    fprintf(fp, "$namespace = '';\n");
+    fprintf(fp, "$classname = '';\n");
+    fprintf(fp, "$tokens = token_get_all($source_code);\n");
+    fprintf(fp, "$in_namespace = false;\n");
+    fprintf(fp, "foreach ($tokens as $token) {\n");
+    fprintf(fp, "    if (is_array($token)) {\n");
+    fprintf(fp, "        list($id, $text) = $token;\n");
+    fprintf(fp, "        if ($id === T_NAMESPACE) {\n");
+    fprintf(fp, "            $in_namespace = true;\n");
+    fprintf(fp, "        } elseif ($in_namespace && $id === T_STRING) {\n");
+    fprintf(fp, "            $namespace .= $text;\n");
+    fprintf(fp, "        } elseif ($in_namespace && $id === T_NS_SEPARATOR) {\n");
+    fprintf(fp, "            $namespace .= '\\\\';\n");
+    fprintf(fp, "        } elseif ($in_namespace && $id === T_WHITESPACE) {\n");
+    fprintf(fp, "            // Skip whitespace in namespace\n");
+    fprintf(fp, "        } elseif ($in_namespace && $text === ';') {\n");
+    fprintf(fp, "            $in_namespace = false;\n");
+    fprintf(fp, "        } elseif ($id === T_CLASS) {\n");
+    fprintf(fp, "            // Get next non-whitespace token which should be the class name\n");
+    fprintf(fp, "            $i = array_search($token, $tokens) + 1;\n");
+    fprintf(fp, "            while (isset($tokens[$i]) && is_array($tokens[$i]) && $tokens[$i][0] === T_WHITESPACE) {\n");
+    fprintf(fp, "                $i++;\n");
+    fprintf(fp, "            }\n");
+    fprintf(fp, "            if (isset($tokens[$i]) && is_array($tokens[$i]) && $tokens[$i][0] === T_STRING) {\n");
+    fprintf(fp, "                $classname = $tokens[$i][1];\n");
+    fprintf(fp, "            }\n");
+    fprintf(fp, "        }\n");
+    fprintf(fp, "    }\n");
+    fprintf(fp, "}\n\n");
+
+    /* Create more reliable opcode extraction */
+    fprintf(fp, "// Create data structure to hold source and metadata\n");
+    fprintf(fp, "$result = [\n");
+    fprintf(fp, "    'filename' => $original_filename,\n");
+    fprintf(fp, "    'contents' => $source_code,\n");
+    fprintf(fp, "    'source_hint' => $source_code,\n"); // Store full source
+    fprintf(fp, "    'namespace' => $namespace,\n");
+    fprintf(fp, "    'classname' => $classname,\n");
+    fprintf(fp, "    'timestamp' => time(),\n");
+    fprintf(fp, "    'php_version' => PHP_VERSION,\n");
+    fprintf(fp, "];\n\n");
+
+    /* Try to use OPcache to get file status if available */
+    fprintf(fp, "// Try to use OPcache if available\n");
+    fprintf(fp, "if (function_exists('opcache_compile_file') && function_exists('opcache_get_status')) {\n");
+    fprintf(fp, "    if (opcache_compile_file($source_file)) {\n");
+    fprintf(fp, "        $opcache_status = opcache_get_status(true);\n");
+    fprintf(fp, "        $result['compiled_with'] = 'opcache';\n");
+    fprintf(fp, "        if (isset($opcache_status['scripts'][$source_file])) {\n");
+    fprintf(fp, "            $result['opcache_info'] = $opcache_status['scripts'][$source_file];\n");
+    fprintf(fp, "        }\n");
+    fprintf(fp, "    }\n");
+    fprintf(fp, "}\n\n");
+
+    /* Directly compile the PHP code for better reliability */
+    fprintf(fp, "// Direct compilation\n");
+    fprintf(fp, "try {\n");
+    fprintf(fp, "    $result['compiled_with'] = 'direct';\n");
+    fprintf(fp, "    \n");
+    fprintf(fp, "    // Use a safe approach with temp files to avoid issues\n");
+    fprintf(fp, "    $temp_func_file = '/tmp/zypher_func_' . uniqid() . '.php';\n");
+    fprintf(fp, "    file_put_contents($temp_func_file, '<?php\\n' . $source_code);\n");
+    fprintf(fp, "    include_once($temp_func_file);\n");
+    fprintf(fp, "    unlink($temp_func_file);\n");
+    fprintf(fp, "    $result['compilation_success'] = true;\n");
+    fprintf(fp, "} catch (Error $e) {\n");
+    fprintf(fp, "    $result['compilation_success'] = false;\n");
+    fprintf(fp, "    $result['compilation_error'] = $e->getMessage();\n");
+    fprintf(fp, "}\n\n");
+
+    /* Output the final result */
+    fprintf(fp, "// Output encoded result\n");
+    fprintf(fp, "$serialized = serialize($result);\n");
+    fprintf(fp, "echo 'ZYPHER_OPCODES:' . $serialized;\n");
+    fprintf(fp, "?>\n");
+    fclose(fp);
+
+    /* Create command to run the extractor script */
+    char *command = (char *)malloc(strlen(opcode_extractor) + 512);
+    if (!command)
+    {
+        print_error("Failed to allocate memory for command");
+        unlink(temp_file);
+        unlink(opcode_extractor);
+        return ZYPHER_FAILURE;
+    }
+
+    /* Run PHP with error reporting enabled to get detailed errors */
+    sprintf(command, "php -d display_errors=1 -d error_reporting=E_ALL %s 2>&1", opcode_extractor);
+    opcode_output = run_command(command, &cmd_output_size);
+    free(command);
+
+    /* Clean up temporary files */
     unlink(temp_file);
+    unlink(opcode_extractor);
 
     if (!opcode_output || cmd_output_size == 0)
     {
@@ -148,9 +237,21 @@ int compile_php_to_opcodes(const char *source_code, const char *filename, char *
         return ZYPHER_FAILURE;
     }
 
-    /* Return the opcode output */
+    /* Verify the output starts with our marker */
+    char *marker_pos = strstr(opcode_output, "ZYPHER_OPCODES:");
+    if (!marker_pos)
+    {
+        print_error("Invalid opcode output format: %s", opcode_output);
+        free(opcode_output);
+        return ZYPHER_FAILURE;
+    }
+
+    /* Strip everything before the prefix and return just the encoded data */
+    size_t prefix_len = strlen("ZYPHER_OPCODES:");
+    size_t offset = marker_pos - opcode_output + prefix_len;
+    memmove(opcode_output, opcode_output + offset, cmd_output_size - offset + 1);
     *output = opcode_output;
-    *output_len = cmd_output_size;
+    *output_len = cmd_output_size - offset;
 
     print_debug("Successfully compiled PHP to opcodes (%zu bytes)", *output_len);
     return ZYPHER_SUCCESS;

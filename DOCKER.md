@@ -5,121 +5,72 @@ To simplify the build and testing process for Zypher, you can use Docker to crea
 ## Prerequisites
 
 - Docker installed on your system
-- Docker Compose installed (optional, for multi-container setups)
+- Docker Compose installed
 
-## Docker Instructions
+## Using the Docker Development Shell
 
-### 1. Build the Docker Image
+The `docker.sh` script provides the easiest way to work with the Zypher codebase inside a Docker container. It handles all the Docker container management for you.
+
+### Basic Usage
 
 ```bash
-docker-compose build
+./docker.sh
 ```
 
-This will create the Zypher Docker image with all the necessary dependencies installed.
+This will:
+1. Start the Zypher container if it's not already running
+2. Attach your current terminal to the container's bash shell
+3. Allow you to run any commands directly inside the container
 
-### 2. Run Makefile Commands Using Docker Compose
-
-The `docker-compose.yml` file has been configured to make it easy to run any Makefile command. Here are examples of common commands:
-
-#### Build Everything (Default)
-
-```bash
-docker-compose up
-```
-
-This will build both the encoder and loader by running `make all`.
-
-#### Build Specific Components
+Once inside the container, you can run any make commands directly:
 
 ```bash
+# Build everything
+make
+
 # Build just the encoder
-docker-compose run --rm make encoder
+make encoder
 
 # Build just the loader
-docker-compose run --rm make loader
+make loader
 
-# Build debug version of the loader
-docker-compose run --rm make debug_loader
+# Run tests
+make test
 ```
 
-#### Install the Extension
+To exit the container shell, simply type `exit`.
+
+### Advanced Usage
+
+#### Force Rebuild
+
+If you need to rebuild the Docker image (e.g., after Dockerfile changes):
 
 ```bash
-# Install the extension to PHP's extension directory
-docker-compose run --rm make install
+./docker.sh --rebuild
 ```
 
-#### Test Commands
+#### Run Single Commands
+
+Run a specific command in the container without staying in the shell:
 
 ```bash
-# Run all tests
-docker-compose run --rm make test
-
-# Run quick test
-docker-compose run --rm make quick_test
+./docker.sh make
+./docker.sh make encoder
+./docker.sh make test
 ```
-
-#### Utility Commands
-
-```bash
-# Show system information
-docker-compose run --rm make info
-
-# Check PHP environment
-docker-compose run --rm make check_php
-
-# Clean build files
-docker-compose run --rm make clean
-
-# Deep clean (remove master key and build files)
-docker-compose run --rm make distclean
-```
-
-### 3. Run the Encoder Directly
-
-To use the encoder after building it:
-
-```bash
-docker-compose run --rm encoder -v
-```
-
-This will run the Zypher encoder command with the `-v` flag to show version information.
-
-You can pass any arguments to the encoder:
-
-```bash
-docker-compose run --rm encoder -o output.php input.php
-```
-
-### 4. Interactive Development
-
-For interactive development within the Docker container:
-
-```bash
-docker-compose run --rm shell
-```
-
-This will start a shell session in the container, where you can run any command manually.
-
-## Mounting Volumes
-
-The Docker setup mounts your project directory to `/zypher` inside the container. This means:
-
-1. Any files you create in the container in the `/zypher` directory will be visible on your host machine.
-2. Any changes you make on your host machine will be immediately reflected in the container.
 
 ## Notes
 
-- The Docker image is based on `php:8.3-cli` and includes all necessary dependencies for building and running Zypher.
-- The `Makefile` handles the build process for both the encoder and loader.
-- The `zypher_master_key.h` file is generated during the build process and is required for both encoding and decoding.
+- The Docker setup mounts your project directory to `/zypher` inside the container
+- Any files you modify inside the container will be reflected on your host system
+- The container remains running in the background after you exit the shell
+- Your build artifacts will persist between shell sessions
 
 ## Troubleshooting
 
-If you encounter any issues, ensure that:
+If you encounter any issues with the container:
 
-- Docker is installed and running on your system.
-- The `Makefile` is correctly configured for your environment.
-- All required dependencies are installed in the Docker image.
-
-For further assistance, refer to the `README.md` or contact the project maintainers.
+1. Try forcing a rebuild: `./docker.sh --rebuild`
+2. Check Docker daemon status
+3. Verify Docker Compose is installed correctly
