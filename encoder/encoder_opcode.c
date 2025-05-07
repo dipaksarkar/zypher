@@ -205,8 +205,8 @@ int compile_php_to_opcodes(const char *source_code, const char *filename, char *
     fprintf(fp, "    $result['compilation_error'] = $e->getMessage();\n");
     fprintf(fp, "}\n\n");
 
-    /* Output the final result */
-    fprintf(fp, "// Output encoded result\n");
+    /* Output the final result as raw serialized data, not base64 encoded */
+    fprintf(fp, "// Output raw serialized result instead of base64\n");
     fprintf(fp, "$serialized = serialize($result);\n");
     fprintf(fp, "echo 'ZYPHER_OPCODES:' . $serialized;\n");
     fprintf(fp, "?>\n");
@@ -266,118 +266,69 @@ char *php_serialize_data(const char *contents, const char *filename)
         return NULL;
     }
 
-    /* Create a simple serialized structure with MD5:base64 format */
-    char *result = NULL;
-    char md5[33] = {0};
-    char *base64_data = NULL;
-    size_t data_len = 0;
-    char *raw_data = NULL;
-
-    /* Calculate length needed for structure */
-    data_len = strlen(contents) + strlen(filename) + 100;
-    raw_data = (char *)malloc(data_len);
-    if (!raw_data)
-    {
-        print_error("Failed to allocate memory for serialized data");
-        return NULL;
-    }
-
-    /* Create a serialized structure with contents and filename */
-    /* Format: a:2:{s:8:"filename";s:X:"...";s:8:"contents";s:X:"...";} */
-    int written = snprintf(raw_data, data_len,
-                           "a:2:{s:8:\"filename\";s:%zu:\"%s\";s:8:\"contents\";s:%zu:\"%s\";}",
-                           strlen(filename), filename, strlen(contents), contents);
-
-    if (written < 0 || written >= (int)data_len)
-    {
-        print_error("Failed to create serialized data");
-        free(raw_data);
-        return NULL;
-    }
-
-    /* Try to use PHP's native serialization if available */
-    char *command = NULL;
+    /* Create a simple serialized structure */
+    char *serialized_data = NULL;
     char *temp_file = "/tmp/zypher_temp_serialize.php";
     size_t cmd_output_size = 0;
     FILE *fp = NULL;
 
-    /* Write the raw data to a temporary file */
+    /* Write the PHP script to serialize the data */
     fp = fopen(temp_file, "w");
     if (!fp)
     {
-        /* Fall back to our own serialization */
-        goto use_internal_serialization;
+        print_error("Failed to create temporary file for serialization");
+        return NULL;
     }
 
-    /* Write PHP script to serialize the data */
+    /* Write PHP script to serialize the data directly without base64 encoding */
     fprintf(fp, "<?php\n");
     fprintf(fp, "$data = array('filename' => '%s', 'contents' => <<<'EOT'\n", filename);
     fprintf(fp, "%s\n", contents);
     fprintf(fp, "EOT\n");
     fprintf(fp, ");\n");
-    fprintf(fp, "echo base64_encode(serialize($data));\n");
+    fprintf(fp, "// Output raw serialized data without base64 encoding\n");
+    fprintf(fp, "echo serialize($data);\n");
     fprintf(fp, "?>");
     fclose(fp);
 
     /* Create PHP command to serialize data */
-    command = (char *)malloc(strlen(temp_file) + 128);
-    if (command)
+    char *command = (char *)malloc(strlen(temp_file) + 128);
+    if (!command)
     {
-        sprintf(command, "php %s", temp_file);
-        base64_data = run_command(command, &cmd_output_size);
-        free(command);
+        print_error("Failed to allocate memory for command");
+        unlink(temp_file);
+        return NULL;
     }
+
+    sprintf(command, "php %s", temp_file);
+    serialized_data = run_command(command, &cmd_output_size);
+    free(command);
 
     /* Remove the temporary file */
     unlink(temp_file);
 
-    if (!base64_data || cmd_output_size == 0)
+    if (!serialized_data || cmd_output_size == 0)
     {
-        /* Fall back to our own serialization */
-        goto use_internal_serialization;
-    }
-
-    /* Calculate MD5 of base64 data */
-    extern void calculate_content_checksum(const char *content, size_t length, char *output);
-    calculate_content_checksum(base64_data, strlen(base64_data), md5);
-
-    /* Create final result: MD5 + base64 data */
-    result = (char *)malloc(strlen(md5) + strlen(base64_data) + 1);
-    if (result)
-    {
-        sprintf(result, "%s%s", md5, base64_data);
-    }
-
-    free(base64_data);
-    free(raw_data);
-
-    return result;
-
-use_internal_serialization:
-    /* This is a fallback if PHP serialization fails */
-    extern char *base64_encode(const unsigned char *input, size_t length);
-    base64_data = base64_encode((unsigned char *)raw_data, strlen(raw_data));
-    if (!base64_data)
-    {
-        print_error("Failed to base64 encode serialized data");
-        free(raw_data);
+        print_error("Failed to serialize data");
         return NULL;
     }
 
-    /* Calculate MD5 of base64 data */
+    /* Calculate MD5 of serialized data and prefix it */
+    char md5[33] = {0}; /* MD5 is 32 chars + null */
     extern void calculate_content_checksum(const char *content, size_t length, char *output);
-    calculate_content_checksum(base64_data, strlen(base64_data), md5);
+    calculate_content_checksum(serialized_data, strlen(serialized_data), md5);
 
-    /* Create final result: MD5 + base64 data */
-    result = (char *)malloc(strlen(md5) + strlen(base64_data) + 1);
-    if (result)
+    /* Create final result: MD5 + serialized data (without base64 encoding) */
+    char *result = (char *)malloc(strlen(md5) + strlen(serialized_data) + 1);
+    if (!result)
     {
-        sprintf(result, "%s%s", md5, base64_data);
+        print_error("Failed to allocate memory for result");
+        free(serialized_data);
+        return NULL;
     }
 
-    /* Clean up */
-    free(raw_data);
-    free(base64_data);
+    sprintf(result, "%s%s", md5, serialized_data);
+    free(serialized_data);
 
     return result;
 }
