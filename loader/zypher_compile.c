@@ -306,7 +306,7 @@ zend_op_array *zypher_load_opcodes(const char *decoded_data, const char *filenam
         zend_string *zs_source = zend_string_init(source_hint, strlen(source_hint), 0);
 
         /* Directly compile the complete source code with proper API parameter */
-        op_array = compile_string(zs_source, filename, ZEND_COMPILE_POSITION_AT_OPEN_TAG);
+        op_array = zend_compile_string(zs_source, (char *)filename, ZEND_COMPILE_POSITION_AT_OPEN_TAG);
 
         zend_string_release(zs_source);
 
@@ -324,8 +324,8 @@ zend_op_array *zypher_load_opcodes(const char *decoded_data, const char *filenam
         /* Fallback to the original source code */
         zend_string *zs_source = zend_string_init(source_code, strlen(source_code), 0);
 
-        /* Call compile_string with proper parameters */
-        op_array = compile_string(zs_source, filename, ZEND_COMPILE_POSITION_AT_OPEN_TAG);
+        /* Call zend_compile_string with proper parameters */
+        op_array = zend_compile_string(zs_source, (char *)filename, ZEND_COMPILE_POSITION_AT_OPEN_TAG);
 
         zend_string_release(zs_source);
 

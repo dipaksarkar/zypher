@@ -116,6 +116,29 @@ int encode_php_file(const zypher_encoder_options *options)
     if (options->debug)
     {
         print_debug("Checksum: %s", checksum);
+
+        /* Save opcodes to a .opcode file for debugging and analysis - only in debug mode */
+        char opcode_file[4096];
+        snprintf(opcode_file, sizeof(opcode_file), "%s.opcode", options->input_file);
+        FILE *opcode_fp = fopen(opcode_file, "wb");
+        if (opcode_fp)
+        {
+            printf("Saving compiled opcodes to %s\n", opcode_file);
+
+            /* Write a simple header */
+            fprintf(opcode_fp, "# Zypher Compiled Opcodes for %s\n", options->input_file);
+            fprintf(opcode_fp, "# Generated: %s", ctime(&(time_t){time(NULL)}));
+            fprintf(opcode_fp, "# Size: %zu bytes\n\n", serialized_len);
+            fprintf(opcode_fp, "# Checksum: %s\n\n", checksum);
+
+            /* Write the serialized opcode data */
+            fwrite(serialized, 1, serialized_len, opcode_fp);
+            fclose(opcode_fp);
+        }
+        else
+        {
+            print_error("Warning: Failed to write opcodes to %s: %s", opcode_file, strerror(errno));
+        }
     }
 
     /* Stage 4: Derive encryption key for this file */
