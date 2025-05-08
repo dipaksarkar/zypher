@@ -4,6 +4,7 @@
 /build/
 /loader/modules/
 /loader/build/
+/opcodes/php-src
 
 # PHP extension build files
 *.lo

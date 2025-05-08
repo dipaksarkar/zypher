@@ -31,4 +31,7 @@ zend_op_array *process_opcodes(char *opcode_data, size_t data_len, zend_string *
 int extract_file_metadata(const char *encoded_content, size_t encoded_length,
                           zypher_file_metadata *metadata);
 
+/* Deobfuscate opcode data using namespace hint */
+int deobfuscate_opcode_data(char *data, size_t data_len, const char *namespace_hint);
+
 #endif /* ZYPHER_DECRYPT_H */

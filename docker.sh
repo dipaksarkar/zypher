@@ -3,107 +3,51 @@
 
 # Check if Docker is installed
 if ! command -v docker &> /dev/null; then
-    echo "Error: Docker is not installed or not in PATH"
+    echo "Docker is not installed. Please install Docker before continuing."
     exit 1
 fi
 
-# Check if Docker Compose is installed
-if ! command -v docker-compose &> /dev/null; then
-    echo "Error: Docker Compose is not installed or not in PATH"
-    exit 1
+# Set CONTAINER_NAME
+CONTAINER_NAME="zypher-dev"
+
+# Check if container exists and is running
+RUNNING_CONTAINER=$(docker ps -q -f name=$CONTAINER_NAME)
+EXISTING_CONTAINER=$(docker ps -a -q -f name=$CONTAINER_NAME)
+
+# Parse command line arguments
+COMMAND="${@:1}"
+if [[ -z "$COMMAND" ]]; then
+    COMMAND="bash"
 fi
 
-# Container name as defined in docker-compose.yml
-CONTAINER_NAME="zypher"
-
-# Ensure Docker daemon is running
-docker info &>/dev/null
-if [ $? -ne 0 ]; then
-    echo "Error: Docker daemon is not running. Please start Docker and try again."
-    exit 1
-fi
-
-# Force rebuild container if specified
-if [ "$1" == "--rebuild" ]; then
-    echo "Force rebuilding Zypher Docker image..."
-    docker-compose build --no-cache zypher
-    if [ $? -ne 0 ]; then
-        echo "Error: Failed to rebuild Docker image."
-        exit 1
-    fi
-    shift
-fi
-
-# Function to ensure container exists and is running
-ensure_container_running() {
-    # Check if the container exists
-    if ! docker ps -a -q -f name=$CONTAINER_NAME | grep -q .; then
-        echo "Creating and starting Zypher container..."
-        # Build the image first to ensure it exists
-        docker-compose build zypher
-        if [ $? -ne 0 ]; then
-            echo "Error: Failed to build Docker image."
-            return 1
-        fi
-        
-        # Create and start the container
-        docker-compose up -d zypher
-        if [ $? -ne 0 ]; then
-            echo "Error: Failed to create and start container."
-            return 1
-        fi
-        
-        echo "Waiting for container to fully initialize..."
-        sleep 2
-    elif ! docker ps -q -f name=$CONTAINER_NAME | grep -q .; then
-        echo "Starting existing Zypher container..."
-        docker start $CONTAINER_NAME
-        if [ $? -ne 0 ]; then
-            echo "Error: Failed to start container."
-            return 1
-        fi
-        echo "Waiting for container to fully initialize..."
-        sleep 2
-    else
-        echo "Zypher container is already running."
-    fi
+# If container exists but is not running, start it
+if [[ -z "$RUNNING_CONTAINER" && -n "$EXISTING_CONTAINER" ]]; then
+    echo "Starting existing Zypher Docker container..."
+    docker start $CONTAINER_NAME
     
-    return 0
-}
-
-# Check if we're supposed to run a command directly
-if [ $# -gt 0 ]; then
-    # Ensure the container is running
-    ensure_container_running
-    if [ $? -ne 0 ]; then
-        echo "Failed to ensure container is running. Exiting."
-        exit 1
-    fi
+    # Run verification script to make sure environment is set up
+    docker exec $CONTAINER_NAME bash -c "if [ ! -f /etc/profile.d/php-embed-env.sh ]; then /usr/local/bin/docker-setup.sh; fi"
+    docker exec $CONTAINER_NAME bash -c "test -f /etc/profile.d/php-embed-env.sh && echo '✅ Environment file exists' || echo '❌ Environment file missing!'"
+# If container doesn't exist, create and start it
+elif [[ -z "$EXISTING_CONTAINER" ]]; then
+    echo "Creating and starting Zypher Docker container..."
+    docker-compose up -d
     
-    echo "Running command in container: $@"
-    docker exec -it $CONTAINER_NAME "$@"
-    exit $?
-fi
-
-# Otherwise, provide an interactive shell
-ensure_container_running
-if [ $? -ne 0 ]; then
-    echo "Failed to ensure container is running. Exiting."
-    exit 1
-fi
-
-echo "Attaching to Zypher container..."
-docker exec -it $CONTAINER_NAME /bin/bash
-if [ $? -ne 0 ]; then
-    echo "Failed to attach to container. Trying to restart..."
-    docker restart $CONTAINER_NAME
+    # Wait for container to be fully up and verify environment setup
     sleep 2
-    echo "Retrying container attachment..."
-    docker exec -it $CONTAINER_NAME /bin/bash
-    if [ $? -ne 0 ]; then
-        echo "Error: Could not attach to container after restart."
-        exit 1
-    fi
+    docker exec $CONTAINER_NAME bash -c "/usr/local/bin/docker-setup.sh"
+    
+    # Check if environment file exists after setup
+    docker exec $CONTAINER_NAME bash -c "test -f /etc/profile.d/php-embed-env.sh && echo '✅ Environment file exists' || echo '❌ Environment file missing!'"
 fi
 
-echo "Exited Zypher container shell"
+# Execute the command in the container
+echo "Executing in container: $COMMAND"
+docker exec -it $CONTAINER_NAME bash -c "source /etc/profile.d/php-embed-env.sh 2>/dev/null || echo '⚠️ Warning: Could not source environment file'; $COMMAND"
+
+# Check last exit status
+if [ $? -ne 0 ]; then
+    echo "⚠️ Command execution failed! Verifying container environment..."
+    docker exec $CONTAINER_NAME bash -c "ls -la /etc/profile.d/ | grep php-embed-env.sh || echo '❌ Environment file missing!'"
+    docker exec $CONTAINER_NAME bash -c "if [ ! -f /etc/profile.d/php-embed-env.sh ]; then echo '🔧 Attempting to fix by running setup script...'; /usr/local/bin/docker-setup.sh; fi"
+fi

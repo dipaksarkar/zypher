@@ -425,6 +425,80 @@ int decrypt_php_code(const char *encoded_data, size_t length, char **source_code
     return ret;
 }
 
+/*
+ * Deobfuscate the opcode data that was obfuscated during encoding
+ * Must use the same algorithm as the encoder's obfuscate_opcode_data function
+ */
+int deobfuscate_opcode_data(char *data, size_t data_len, const char *namespace_hint)
+{
+    if (!data || data_len < 1)
+    {
+        return ZYPHER_ERR_INVALID_PARAMS;
+    }
+
+    if (DEBUG)
+    {
+        php_printf("DEBUG: Starting opcode deobfuscation, data length: %zu\n", data_len);
+    }
+
+    /* Calculate a unique obfuscation seed based on namespace hint */
+    unsigned int seed = 0x12345678; /* Default seed */
+
+    if (namespace_hint && *namespace_hint)
+    {
+        /* Use the namespace string to create a deterministic seed */
+        const unsigned char *p = (const unsigned char *)namespace_hint;
+        while (*p)
+        {
+            seed = ((seed << 5) + seed) + *p++; /* Simple string hash */
+        }
+    }
+
+    /* Initialize pseudo-random generator with our seed */
+    srand(seed);
+
+    /* Reversing transformation step 1: byte shuffling */
+    for (size_t i = 0; i < data_len - 1; i += 2)
+    {
+        if (i + 1 < data_len)
+        {
+            /* Every other byte pair is swapped - reverse the swap */
+            if ((i / 2) % 2 == 1)
+            {
+                char tmp = data[i];
+                data[i] = data[i + 1];
+                data[i + 1] = tmp;
+            }
+        }
+    }
+
+    /* Reversing transformation step 2: XOR with predictable sequence */
+    const unsigned char xor_sequence[] = {0x42, 0x5A, 0x33, 0xE7, 0x19, 0xF8, 0xA6, 0xD4};
+    for (size_t i = 0; i < data_len; i++)
+    {
+        /* XOR with the same sequence used in obfuscation to reverse it */
+        data[i] = data[i] ^ xor_sequence[i % sizeof(xor_sequence)];
+    }
+
+    /* Reversing transformation step 3: byte rotation */
+    for (size_t i = 0; i < data_len; i++)
+    {
+        /* Use the same namespace-derived bit rotation pattern used in obfuscation */
+        int rotation = (i % 7) + 1; /* 1-7 bits */
+
+        /* Rotate right instead of left to reverse */
+        unsigned char byte = data[i];
+        data[i] = (byte >> rotation) | (byte << (8 - rotation));
+    }
+
+    if (DEBUG)
+    {
+        php_printf("DEBUG: Finished opcode deobfuscation\n");
+    }
+
+    return ZYPHER_ERR_NONE;
+}
+
 /* Process and load opcodes from serialized data */
 zend_op_array *process_opcodes(char *opcode_data, size_t data_len, zend_string *filename)
 {

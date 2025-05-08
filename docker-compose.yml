@@ -1,6 +1,6 @@
 services:
     zypher:
-        container_name: zypher
+        container_name: zypher-dev
         build:
             context: .
             dockerfile: Dockerfile

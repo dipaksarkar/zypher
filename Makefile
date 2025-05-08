@@ -1,6 +1,6 @@
 # Makefile for Zypher PHP Encoder/Loader System
 # Author: Zypher Team
-# Date: May 7, 2025
+# Date: May 8, 2025
 
 # Directories
 ROOT_DIR := $(shell pwd)
@@ -25,18 +25,28 @@ PHP_INCLUDE := $(shell $(PHP_CONFIG) --includes)
 PHP_LDFLAGS := $(shell $(PHP_CONFIG) --ldflags)
 PHP_LIBS := $(shell $(PHP_CONFIG) --libs)
 
-# Check if PHP embed SAPI is available
-PHP_EMBED_LDFLAGS := $(shell $(PHP_CONFIG) --ldflags 2>/dev/null | grep -o -- '-L[^ ]*embed[^ ]*' 2>/dev/null || echo "")
-PHP_EMBED_LIBS := $(shell $(PHP_CONFIG) --libs 2>/dev/null | grep -o -- '-lphp[^ ]*' 2>/dev/null || echo "")
-PHP_EMBED_INCLUDE := $(shell $(PHP) -r 'echo file_exists(PHP_CONFIG_FILE_PATH."/embed") ? "yes" : "no";')
+# Check if we're in a Docker environment
+IN_DOCKER := $(shell [ -f /.dockerenv ] && echo "yes" || echo "no")
 
-# Required PHP embedding for direct Zend API access
-ifeq ($(strip $(PHP_EMBED_LIBS)),)
-  $(error PHP embedding is required but not available. Please install PHP with --enable-embed SAPI support)
+# Check if PHP embed SAPI is available
+# For Docker, we'll directly check for the libphp.so file
+ifeq ($(IN_DOCKER),yes)
+    EMBED_LIB := $(shell find /usr/local/lib -name "libphp*.so" 2>/dev/null | head -1)
+    EMBED_HEADER := $(shell find /usr/local/include -name "php_embed.h" 2>/dev/null | head -1)
+    ifneq ($(EMBED_LIB),)
+        PHP_EMBED_LDFLAGS := -L/usr/local/lib
+        PHP_EMBED_LIBS := -lphp
+        PHP_EMBED_INCLUDE := -I/usr/local/include/php -I/usr/local/include/php/main -I/usr/local/include/php/Zend -I/usr/local/include/php/TSRM
+        HAVE_EMBED := 1
+    endif
+else
+    # Standard detection for non-Docker environments
+    PHP_EMBED_LDFLAGS := $(shell $(PHP_CONFIG) --ldflags 2>/dev/null | grep -o -- '-L[^ ]*embed[^ ]*' 2>/dev/null || echo "")
+    PHP_EMBED_LIBS := $(shell $(PHP_CONFIG) --libs 2>/dev/null | grep -o -- '-lphp[^ ]*' 2>/dev/null || echo "")
 endif
 
 # Set up compiler flags with PHP embedding
-CFLAGS := -Wall -O2 -fPIC -I$(INCLUDE_DIR) $(PHP_INCLUDE) -DHAVE_EMBED=1
+CFLAGS := -Wall -O2 -fPIC -I$(INCLUDE_DIR) $(PHP_INCLUDE) $(PHP_EMBED_INCLUDE) -DHAVE_EMBED=1
 LDFLAGS := -lssl -lcrypto $(PHP_LDFLAGS) $(PHP_LIBS) $(PHP_EMBED_LDFLAGS) $(PHP_EMBED_LIBS)
 
 # Master key file
@@ -104,18 +114,41 @@ $(ENCODER_BIN): $(ENCODER_SOURCES) $(INCLUDE_DIR)/zypher_common.h $(INCLUDE_DIR)
 	@echo "Encoder built successfully: $(ENCODER_BIN)"
 	@chmod +x $(ENCODER_BIN)
 
-# Check if PHP embed SAPI is available
+# Check if PHP embed SAPI is available with more detailed output
 check_php_embed:
 	@echo "Checking for PHP embedding support..."
-	@if [ -z "$(PHP_EMBED_LIBS)" ]; then \
-		echo "ERROR: PHP embedding SAPI is required but not available"; \
-		echo "Please install PHP with --enable-embed SAPI support"; \
-		echo "For example:"; \
-		echo "  ./configure --enable-embed [other options]"; \
-		echo "  make && make install"; \
-		exit 1; \
+	@echo "Environment: $(if $(IN_DOCKER),Docker,Native)"
+	@if [ "$(IN_DOCKER)" = "yes" ]; then \
+		if [ -f "/usr/local/lib/libphp.so" ]; then \
+			echo "Found libphp.so in Docker container at /usr/local/lib/libphp.so"; \
+			echo "Using direct library path configuration"; \
+		else \
+			echo "Warning: libphp.so not found in Docker container"; \
+		fi; \
+		if [ -f "/usr/local/include/php/sapi/embed/php_embed.h" ]; then \
+			echo "Found php_embed.h at /usr/local/include/php/sapi/embed/php_embed.h"; \
+		else \
+			echo "Warning: php_embed.h not found in Docker container"; \
+		fi; \
+		echo "Embed library flags: $(PHP_EMBED_LDFLAGS) $(PHP_EMBED_LIBS)"; \
+		echo "Embed include flags: $(PHP_EMBED_INCLUDE)"; \
 	else \
-		echo "PHP embedding support detected ($(PHP_EMBED_LIBS))"; \
+		if [ -z "$(PHP_EMBED_LIBS)" ]; then \
+			echo "ERROR: PHP embedding SAPI is required but not available"; \
+			echo "Please install PHP with --enable-embed SAPI support"; \
+			echo "For example:"; \
+			echo "  ./configure --enable-embed [other options]"; \
+			echo "  make && make install"; \
+			exit 1; \
+		else \
+			echo "PHP embedding support detected ($(PHP_EMBED_LIBS))"; \
+		fi; \
+	fi
+	@if [ "$(IN_DOCKER)" = "yes" -a -z "$(EMBED_LIB)" ]; then \
+		echo "ERROR: PHP embedding SAPI is required in Docker container"; \
+		echo "Please ensure libphp.so exists in /usr/local/lib"; \
+		echo "Try running 'source /usr/local/bin/docker-setup.sh' first"; \
+		exit 1; \
 	fi
 
 # Clean and reset the loader build environment before building
@@ -217,4 +250,20 @@ info:
 	@if [ -f $(LOADER_DIR)/zypher.so ]; then echo "Loader Extension: EXISTS"; else echo "Loader Extension: NOT BUILT"; fi
 	@echo "=============================="
 
-.PHONY: all directories master_key prepare_loader reset_loader encoder loader debug_loader install test_file test quick_test clean distclean info check_php
+# Display environment and configuration info
+env:
+	@echo "Zypher PHP Embed Environment Configuration"
+	@echo "=========================================="
+	@echo "In Docker: $(IN_DOCKER)"
+	@echo "PHP Version: $(PHP_VERSION)"
+	@echo "PHP Binary: $(PHP_BINARY)"
+	@echo "PHP Extension Dir: $(PHP_EXTENSION_DIR)"
+	@echo "Embed Library: $(EMBED_LIB)"
+	@echo "Embed Header: $(EMBED_HEADER)"
+	@echo "PHP Embed Libs: $(PHP_EMBED_LIBS)"
+	@echo "PHP Embed Includes: $(PHP_EMBED_INCLUDE)"
+	@echo "LDFLAGS: $(LDFLAGS)"
+	@echo "CFLAGS: $(CFLAGS)"
+	@echo "=========================================="
+
+.PHONY: all directories master_key prepare_loader reset_loader encoder loader debug_loader install test_file test quick_test clean distclean info check_php env
